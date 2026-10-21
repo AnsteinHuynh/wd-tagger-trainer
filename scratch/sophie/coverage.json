@@ -1,0 +1,28 @@
+{
+ "train": {
+  "labels_with_support": 10790,
+  "labels_never": 1686,
+  "labels_lt_10": 7908,
+  "label_occurrences": 322944
+ },
+ "valid": {
+  "labels_with_support": 4621,
+  "labels_never": 7855,
+  "labels_lt_10": 4082,
+  "label_occurrences": 32674
+ },
+ "test": {
+  "labels_with_support": 4697,
+  "labels_never": 7779,
+  "labels_lt_10": 4147,
+  "label_occurrences": 33035
+ },
+ "test_labels_absent_from_train": 217,
+ "test_positives_of_those_labels": 237,
+ "test_positives_total": 33035,
+ "valid_labels_absent_from_train": 198,
+ "valid_positives_of_those_labels": 214,
+ "valid_positives_total": 32674,
+ "labels_never_in_any_split": 1296,
+ "train_labels_never_in_test": 6310
+}

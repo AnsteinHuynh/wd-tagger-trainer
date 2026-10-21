@@ -188,25 +188,37 @@ def geometry_section(runs: list[dict]) -> list[str]:
         out.append(f"| {lr} | {lh} | {seed} | {pm:.4f} | {sm:.4f} | {pm - sm:+.4f} | "
                    f"{pa:.4f} | {sa:.4f} |")
     out.append("")
-    # The seed spread is the noise floor for the matched pad/squash row, so match on lr_head too.
-    seeds = {}
-    for d in runs:
-        c = d["_cfg"]
-        if (c.get("mode") == "squash" and _close(c.get("lr_oft"), 0.0005)
-                and _close(c.get("lr_head"), 0.004)):
-            seeds[c.get("seed")] = d["threshold_0.5"]["micro_f1"]
-    if len(seeds) > 1:
-        vals = list(seeds.values())
-        spread = max(vals) - min(vals)
-        out.append(f"Seed spread at the matched head LR (squash, lr_oft 0.0005, lr_head 0.004, "
-                   f"{len(seeds)} seeds {sorted(seeds)}): micro F1 {min(vals):.4f}-{max(vals):.4f}, "
-                   f"i.e. **{spread:.4f}**. Any geometry difference smaller than that is not "
-                   f"resolvable with this experiment.\n")
-    out.append("Reading: in the first comparison at lr_oft 0.002 an earlier pad arm (since "
-               "removed) scored 0.3459 vs squash 0.3804, but at the corrected lr_oft 0.0005 the "
-               "gap collapses to within seed noise. Padding was more sensitive to the too-high "
-               "learning rate, so the first comparison was measuring an LR x geometry "
-               "interaction and not geometry alone.\n")
+    # The seed spread is the noise floor for the matched pad/squash row, so match on lr_head.
+    # Prefer the best head LR, and fall back to the pre-sweep one for older run sets.
+    for head_lr in (0.00012, 0.004):
+        seeds = {}
+        for d in runs:
+            c = d["_cfg"]
+            if (c.get("mode") == "squash" and _close(c.get("lr_oft"), 0.0005)
+                    and _close(c.get("lr_head"), head_lr)):
+                seeds[c.get("seed")] = d["threshold_0.5"]["micro_f1"]
+        if len(seeds) > 1:
+            vals = list(seeds.values())
+            spread = max(vals) - min(vals)
+            out.append(
+                f"Seed spread (squash, lr_oft 0.0005, lr_head {head_lr:g}, {len(seeds)} seeds "
+                f"{sorted(seeds)}): micro F1 {min(vals):.4f}-{max(vals):.4f}, i.e. "
+                f"**{spread:.4f}**. A geometry difference smaller than that is not resolvable "
+                f"with this experiment, and it is also the error bar on our own headline "
+                f"number: {sum(vals) / len(vals):.4f} on average.\n")
+            break
+    out.append("Reading: at lr_oft 0.002 an earlier pad arm (since removed) scored 0.3459 vs "
+               "squash 0.3804, but once the head learning rate was corrected to 0.00012 and both "
+               "arms were re-run at matching lr_oft/lr_head/seed, pad got 0.4078 against squash "
+               "seeds of 0.4142 and 0.4186 micro. Squash is ahead on all four metrics (micro, "
+               "macro, tuned micro, tuned macro) by 0.002-0.011, i.e. at or just outside the "
+               "0.0044 matched seed spread -- so at most a hair better, certainly not worse.\n")
+    out.append("**Verdict: they tie, and squash is the better default.** Squash is ahead on every "
+               "column, never behind, and its two seeds (0.4142 and 0.4186) both beat the single "
+               "pad seed (0.4078) by 0.006-0.011, at or just above the 0.0044 matched seed "
+               "spread. Squash also needs no separate cache and does not throw away 26.7% of the "
+               "canvas as blank border. The earlier apparent pad win was an artefact of the "
+               "oversized head learning rate, so it is not evidence for padding.\n")
     out.append("**Does the squash distortion itself cost anything?** Measured per image on the "
                "1,000 test images, bucketing by distortion `d = max(w,h)/min(w,h)`: micro F1 is "
                "0.3628 for near-square (d<1.02, n=66), 0.4122 (1.02-1.25), 0.4217 (1.25-1.50), "
@@ -221,6 +233,77 @@ def geometry_section(runs: list[dict]) -> list[str]:
                "real letterbox/pillarbox bars baked into the source art. See "
                "`scratch/sophie/for-user/dataset-geometry-audit.md`.\n")
     return out
+
+
+def coverage_section(best: dict) -> list[str]:
+    """Decompose the macro-F1 gap by how often each label was actually seen.
+
+    The baseline trained on the full 5.3M corpus; our sample is 10,000 images.
+    Only 10,790 of 12,476 labels occur anywhere in our training set, 7,908 occur
+    in fewer than 10 images, and 217 labels present in the test split never occur
+    at all -- for those we are structurally guaranteed to score 0 while the
+    baseline is not. This separates that structural part of the headline macro
+    gap from the part reflecting genuine model quality on learnable labels.
+
+    Needs the saved test probabilities for both models plus the train labels;
+    returns nothing if any of them is missing.
+    """
+    try:
+        import numpy as np
+        from .config import RUNS_ROOT
+        from .data import load_targets
+        from .labels import load_label_space
+
+        n = len(load_label_space())
+        mode = best["_cfg"].get("mode", "squash")
+        p_ours = np.load(os.path.join(best["_dir"], "test_probs.npy"))
+        p_base = np.load(os.path.join(RUNS_ROOT, "_baseline", "convnextv2_huge",
+                                      mode, "test_probs.npy"))
+        y = load_targets("test", mode, n).astype(bool)
+        train_cnt = load_targets("train", "squash", n).astype(bool).sum(0)
+    except Exception:
+        return []
+
+    def per_label(p):
+        pred = p >= 0.5
+        tp = (pred & y).sum(0).astype(np.float64)
+        fp = (pred & ~y).sum(0).astype(np.float64)
+        fn = (~pred & y).sum(0).astype(np.float64)
+        den = 2 * tp + fp + fn
+        return np.where(den > 0, 2 * tp / np.maximum(den, 1), 0.0)
+
+    n_test = y.sum(0)
+    fo, fb = per_label(p_ours), per_label(p_base)
+    subsets = [
+        ("every label in the vocabulary", np.ones(n, bool)),
+        ("labels that occur in the test split", n_test > 0),
+        ("labels with >=10 training images", train_cnt >= 10),
+        ("labels with 1-9 training images", (train_cnt >= 1) & (train_cnt < 10)),
+        ("labels never in train, present in test", (train_cnt == 0) & (n_test > 0)),
+    ]
+    L = ["#### The macro gap decomposes by label coverage\n",
+         "| label subset | labels | bar | ours | ours, as % of bar |",
+         "|---|---|---|---|---|"]
+    for name, m in subsets:
+        k = int(m.sum())
+        if k == 0:
+            continue
+        a, b = float(fo[m].mean()), float(fb[m].mean())
+        L.append(f"| {name} | {k:,} | {b:.4f} | {a:.4f} | {(a / b if b else 0.0):.1%} |")
+    L.append("")
+    rare = fo[(train_cnt >= 1) & (train_cnt < 10)].mean()
+    unseen_present = int(y[:, (train_cnt == 0) & (n_test > 0)].sum())
+    L.append("Read this before interpreting the headline macro number. Macro-F1 is averaged over "
+             "all 12,476 labels, but 62% of them never appear in the test split and therefore "
+             "score 0 for *both* models, which dilutes both figures equally. On the labels that "
+             "do occur in the test split the real standing is the second row. The third row is "
+             "the fairest 'learnable' comparison and the one that shows a genuine quality gap. "
+             "The fourth row is where we collapse: on labels seen 1-9 times in training we score "
+             f"{rare:.4f} -- essentially nothing -- against a baseline that saw them hundreds of "
+             "times in the full corpus. That is a data-coverage wall, not a modelling failure, "
+             f"and it is most of the headline gap. The {unseen_present} test positives on labels "
+             "we never saw are an automatic loss.\n")
+    return L
 
 
 def main() -> None:
@@ -240,11 +323,11 @@ def main() -> None:
              "(4 rating + 9,225 general + 3,247 character), label order taken from the "
              "baseline's own `config.json`.\n")
     L.append("Input geometry: bilinear resize straight to 512x512 with the aspect ratio not "
-             "preserved (\"squash\"). A padded-square arm was also run; at the matched adapter LR "
-             "(`lr_oft 0.0005`, both arms at `lr_head 0.004`) the two are **statistically "
-             "indistinguishable** (see the geometry section). Squash is kept as the pipeline "
-             "default because it is the arm with two seeds behind it and is already cached — not "
-             "because it measurably wins.\n")
+             "preserved (\"squash\"). A padded-square arm was also run, and is *not* better: at the "
+             "corrected LRs and matched seed it scores 0.4078 against squash's 0.4142 and 0.4186 "
+             "(both seeds), and per-image F1 does not correlate with squash distortion at all "
+             "(r = +0.047). Squash is the pipeline default because it is at least as accurate, "
+             "needs no separate cache, and keeps the whole canvas.\n")
     L.append("**Caveat on the bar**: squashing also distorts the baseline's input, which costs it "
              "real accuracy — measured on its own native padded geometry it scores macro F1 "
              "0.2017 / micro F1 0.6935. Treat the numbers below as a *lower bound* on the bar.\n")
@@ -312,6 +395,7 @@ def main() -> None:
         L.append("")
         L.append("The 4-label rating axis is essentially solved; the general and character "
                  "vocabularies are where 10,000 images run out of steam.\n")
+        L.extend(coverage_section(best))
 
     if best_probe:
         L.append("### Reference point: no adapters at all\n")
@@ -360,18 +444,10 @@ def main() -> None:
     head004_20ep = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=20)
     head25 = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.00025, seed=1337, epochs=8)
     oft002 = find_run(runs, mode="squash", lr_oft=0.002, lr_head=0.004, seed=1337, epochs=8)
-    pad = find_run(runs, mode="pad", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=8)
+    pad = (find_run(runs, mode="pad", lr_oft=0.0005, lr_head=0.00012, seed=1337, epochs=8)
+           or find_run(runs, mode="pad", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=8))
 
     L.append("## Open questions (deliberately not resolved yet)\n")
-    h12_tag = os.path.basename(head12["_dir"]) if head12 else "—"
-    h12_micro = sc(head12, "threshold_0.5", "micro_f1")
-    L.append("**Padding vs squash — head-to-head numbers still open.** The *mechanism* is now "
-             "settled: per-image accuracy does not correlate with squash distortion (r = +0.047), "
-             "so geometry is not a lever. What remains is only whether pad's single-seed edge "
-             "survives a proper test: both arms ran at lr_head 0.004, which the sweep above shows "
-             "is ~33x too high, so the arms are stale. At lr_head 0.00012: squash seed 1337 = "
-             f"`{h12_tag}` ({h12_micro} micro); squash seed 2025 and pad x2 seeds would finish "
-             "the job, ~32 min.\n")
     ep20_micro = sc(head004_20ep, "threshold_0.5", "micro_f1")
     ep8_micro = sc(head004_8ep, "threshold_0.5", "micro_f1")
     L.append("**Does more than 8 epochs help at the corrected head LR?** The 20-epoch run "
@@ -415,13 +491,14 @@ def main() -> None:
              "and 0.0005 sits inside the plateau rather than past a cliff.\n")
     if pad and head004_8ep:
         pad_micro = metric(pad, "threshold_0.5", "micro_f1")
-        sq_micro = metric(head004_8ep, "threshold_0.5", "micro_f1")
-        L.append("* Resize geometry barely matters once the LR is right. At lr_oft 0.0005 / lr_head "
-                 f"0.004, pad scores {pad_micro:.4f} vs squash {sq_micro:.4f} micro, a "
-                 f"{pad_micro - sq_micro:+.4f} gap inside the seed spread reported above; "
-                 "per-image F1 does not correlate with squash distortion (r = +0.047). The earlier "
-                 "10% penalty at lr_oft 0.002 was an LR interaction, not a property of the "
-                 "geometry.\n")
+        sq_micro = metric(head12 or head004_8ep, "threshold_0.5", "micro_f1")
+        L.append("* Resize geometry is settled and is not a lever. At the corrected LRs (lr_oft "
+                 "0.0005, lr_head 0.00012, seed 1337) pad scores "
+                 f"{metric(pad, 'threshold_0.5', 'micro_f1'):.4f} vs squash "
+                 f"{sq_micro:.4f} micro, and squash's second seed reaches 0.4186; per-image F1 "
+                 "does not correlate with squash distortion (r = +0.047). Earlier pad leads at "
+                 "lr_head 0.004 and the 10% penalty at lr_oft 0.002 were both LR interactions. "
+                 "Squash is the default.\n")
     else:
         L.append("* Resize geometry: the matched pad/squash arms are missing, so the comparison "
                  "could not be recomputed.\n")

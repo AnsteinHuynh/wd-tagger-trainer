@@ -1,0 +1,83 @@
+== OOV self-test ==
+tag_indices on injected meta -> [1, 4] ['totally_fake_tag_xyz', 'fake_char_xyz']
+OOV detection works; label space index 1='sensitive', 4='1girl'
+distinct tag names used across all 12,000 images: 11180; of them in space: 11180
+space names never used anywhere in the sample: 1296
+top 5 by images: [('1girl', 8226), ('solo', 6772), ('long_hair', 6224), ('sensitive', 6000), ('breasts', 4726)]
+
+== pHash over cache tensors ==
+  [train] 1/16
+  [train] 2/16
+  [train] 3/16
+  [train] 4/16
+  [train] 5/16
+  [train] 6/16
+  [train] 7/16
+  [train] 8/16
+  [train] 9/16
+  [train] 10/16
+  [train] 11/16
+  [train] 12/16
+  [train] 13/16
+  [train] 14/16
+  [train] 15/16
+  [train] 16/16
+  [valid] 1/2
+  [valid] 2/2
+  [test] 1/2
+  [test] 2/2
+train: distinct dHash 10000/10000, distinct pHash 9826/10000
+valid: distinct dHash 1000/1000, distinct pHash 984/1000
+test: distinct dHash 1000/1000, distinct pHash 988/1000
+
+== candidate near-dup pairs ==
+
+train|test: 249 dHash<=6 pairs. pixel MAE (0=identical): min 11.366 median 43.780 max 133.431
+  pairs with MAE<2: 0; MAE<5: 0; pHash Hamming<=8 among them: 35
+  MAE= 11.37 corr=+0.299 dH=5 pH= 4 sameTags=False train:5428790@00005.tar test:1799948@00012.tar
+  MAE= 16.61 corr=+0.635 dH=4 pH= 8 sameTags=False train:6422883@00139.tar test:8224905@00007.tar
+  MAE= 16.65 corr=+0.607 dH=2 pH=10 sameTags=False train:8586311@00035.tar test:8224905@00007.tar
+  MAE= 17.15 corr=+0.490 dH=6 pH=10 sameTags=False train:4840701@00047.tar test:3686928@00005.tar
+  MAE= 17.18 corr=+0.616 dH=5 pH=12 sameTags=False train:4840701@00047.tar test:8224905@00007.tar
+  MAE= 18.13 corr=+0.575 dH=5 pH= 8 sameTags=False train:4922781@00179.tar test:8224905@00007.tar
+  MAE= 18.34 corr=+0.404 dH=6 pH= 6 sameTags=False train:736052@00132.tar test:3686928@00005.tar
+  MAE= 18.52 corr=+0.526 dH=4 pH=10 sameTags=False train:1419055@00043.tar test:8224905@00007.tar
+  MAE= 19.12 corr=+0.596 dH=6 pH=24 sameTags=False train:4208284@00011.tar test:4678921@00002.tar
+  MAE= 19.14 corr=+0.650 dH=4 pH= 8 sameTags=False train:5968198@00072.tar test:8224905@00007.tar
+  MAE= 19.50 corr=+0.565 dH=3 pH= 8 sameTags=False train:3211377@00156.tar test:8224905@00007.tar
+  MAE= 19.74 corr=+0.285 dH=6 pH= 8 sameTags=False train:4840701@00047.tar test:1799948@00012.tar
+
+train|valid: 230 dHash<=6 pairs. pixel MAE (0=identical): min 13.716 median 43.620 max 106.601
+  pairs with MAE<2: 0; MAE<5: 0; pHash Hamming<=8 among them: 39
+  MAE= 13.72 corr=+0.475 dH=6 pH= 0 sameTags=False train:2988482@00071.tar valid:7016966@00008.tar
+  MAE= 14.00 corr=+0.508 dH=6 pH= 4 sameTags=False train:736052@00132.tar valid:7138996@00010.tar
+  MAE= 14.33 corr=+0.517 dH=6 pH= 0 sameTags=False train:2909520@00172.tar valid:7016966@00008.tar
+  MAE= 15.62 corr=+0.465 dH=6 pH= 4 sameTags=False train:4922781@00179.tar valid:7138996@00010.tar
+  MAE= 15.71 corr=+0.505 dH=6 pH= 4 sameTags=False train:8486097@00035.tar valid:7016966@00008.tar
+  MAE= 16.12 corr=+0.392 dH=6 pH= 6 sameTags=False train:2089146@00154.tar valid:7468988@00001.tar
+  MAE= 17.08 corr=+0.424 dH=6 pH=10 sameTags=False train:2462277@00130.tar valid:4994977@00008.tar
+  MAE= 18.03 corr=+0.442 dH=6 pH= 2 sameTags=False train:1941516@00189.tar valid:97956@00011.tar
+  MAE= 18.27 corr=+0.462 dH=6 pH=10 sameTags=False train:6889145@00206.tar valid:4994977@00008.tar
+  MAE= 19.75 corr=+0.576 dH=5 pH= 6 sameTags=False train:4458675@00073.tar valid:7138996@00010.tar
+  MAE= 19.75 corr=+0.719 dH=6 pH=10 sameTags=False train:8300824@00125.tar valid:8279959@00011.tar
+  MAE= 21.18 corr=+0.670 dH=4 pH=10 sameTags=False train:5968198@00072.tar valid:8279959@00011.tar
+
+test|valid: 25 dHash<=6 pairs. pixel MAE (0=identical): min 19.151 median 40.284 max 60.453
+  pairs with MAE<2: 0; MAE<5: 0; pHash Hamming<=8 among them: 5
+  MAE= 19.15 corr=+0.352 dH=6 pH= 4 sameTags=False test:8716926@00010.tar valid:7016966@00008.tar
+  MAE= 19.77 corr=+0.701 dH=6 pH=10 sameTags=False test:8224905@00007.tar valid:8279959@00011.tar
+  MAE= 22.55 corr=+0.422 dH=6 pH= 8 sameTags=False test:5050905@00005.tar valid:7016966@00008.tar
+  MAE= 27.15 corr=+0.448 dH=6 pH=12 sameTags=False test:3624942@00006.tar valid:374977@00012.tar
+  MAE= 28.47 corr=+0.621 dH=5 pH=18 sameTags=False test:2475947@00011.tar valid:8279959@00011.tar
+  MAE= 29.35 corr=+0.581 dH=6 pH= 6 sameTags=False test:2544941@00011.tar valid:1570986@00008.tar
+  MAE= 32.52 corr=+0.688 dH=5 pH=14 sameTags=False test:4994936@00004.tar valid:7372978@00006.tar
+  MAE= 33.49 corr=+0.321 dH=6 pH= 8 sameTags=False test:6093932@00010.tar valid:6945990@00007.tar
+  MAE= 35.31 corr=+0.581 dH=6 pH=14 sameTags=False test:3624942@00006.tar valid:4981965@00009.tar
+  MAE= 35.97 corr=+0.474 dH=5 pH=12 sameTags=False test:2475947@00011.tar valid:4994977@00008.tar
+  MAE= 39.18 corr=+0.400 dH=6 pH=18 sameTags=False test:2475947@00011.tar valid:7460964@00004.tar
+  MAE= 40.19 corr=+0.447 dH=6 pH=16 sameTags=False test:8263948@00003.tar valid:4994977@00008.tar
+
+== within-split near duplicates ==
+train: 160 pairs with dHash<=4, 13 pairs with dHash<=2; examples: [(2, 536, 5866), (2, 1633, 6515), (2, 1894, 2544), (2, 2014, 3361), (2, 2014, 8932)]
+valid: 5 pairs with dHash<=4, 0 pairs with dHash<=2; examples: []
+test: 2 pairs with dHash<=4, 0 pairs with dHash<=2; examples: []

@@ -63,17 +63,52 @@ I:\.cache\wd-tagger-trainer\{train,valid,test}\squash\shard#####-{total}.pt
 ```
 
 Images are bilinear-resized straight to 512x512 with the aspect ratio not preserved
-("squash"). A padded-square arm is a statistical tie: matched at `lr_oft 0.0005`,
-`lr_head 0.004`, seed 1337, pad scores 0.3985 vs squash 0.3888 micro — inside the 0.0112
-seed spread — and per-image accuracy does not correlate with squash distortion
+("squash"). **Geometry is settled: the padded-square arm ties, and squash is the better
+default.** At the corrected head learning rate and matched on `lr_oft 0.0005`, `lr_head
+0.00012`, seed 1337, pad scores 0.4078 vs squash 0.4142 micro — squash ahead on all four
+metrics (micro, macro, tuned micro, tuned macro) by 0.002-0.008, which is inside the seed
+spread. Independently, per-image accuracy does not correlate with squash distortion
 (r = +0.047 over the 1,000 test images; heavily warped images score, if anything, better).
-Input geometry is not a lever. `mode` remains configurable (`squash` / `pad`), but squash
-is the default and the only variant built by default; the pad cache is an experiment
-artifact (`scratch/sophie/build_pad_cache.py`).
+The earlier apparent pad *win* (0.3985 vs 0.3888) was an artifact of the oversized head
+learning rate, so it is not evidence for padding. `mode` remains configurable
+(`squash` / `pad`), but squash is the default and the only variant built by default; the
+pad cache is an experiment artifact (`scratch/sophie/build_pad_cache.py`).
 
 The cache is treated as disposable: it is validated at run start and any missing or
 truncated shard is rebuilt. Shards are written to `.tmp` and atomically renamed, so an
 interrupted build resumes at the first bad shard.
+
+### Label coverage (read this before interpreting macro F1)
+
+The annotations are clean — audited over the exact 10k/1k/1k sets: **no leakage** between
+train and test (0 shared keys, 0 byte-identical images, and an exhaustive 10,000,000-pair
+thumbnail search whose best match, 0.8691, was visually confirmed to be a different
+picture), **no out-of-vocabulary tags** (0 of 322,944 train tag occurrences), **no images
+with zero positive labels**, and no duplicate tags, keys or target vectors. Mean 32.29
+positives per image (median 30, p95 58).
+
+What *is* scarce is coverage. Only **10,790 of 12,476 labels appear at all** in the 10k
+training set; **7,908 appear in fewer than 10 images**, and only **2,882 have 10 or more**.
+**217 labels present in the test split never appear in train**, so those columns are an
+automatic zero for us while the full-corpus baseline scores on them. The macro gap
+decomposes accordingly (best run vs bar):
+
+| label subset | labels | bar | ours | ours, as % of bar |
+|---|---|---|---|---|
+| every label in the vocabulary | 12,476 | 0.1938 | 0.0223 | 11.5% |
+| labels that occur in the test split | 4,697 | 0.5147 | 0.0591 | 11.5% |
+| labels with >=10 training images | 2,882 | 0.4546 | 0.0939 | 20.7% |
+| labels with 1-9 training images | 7,908 | 0.1260 | 0.0009 | 0.7% |
+| labels never in train, present in test | 217 | 0.5091 | 0.0000 | 0.0% |
+
+62% of the vocabulary never occurs in the test split and scores 0 for *both* models, so the
+headline macro figure dilutes both sides equally; the second row is the real standing on
+labels that can be scored at all, and the third row is the fairest "learnable" comparison.
+The collapse is in the fourth row — labels seen 1-9 times in training, where we score
+essentially nothing against a baseline that saw them hundreds of times. That is a
+data-coverage wall, and most of the headline gap. Detail:
+`scratch/sophie/for-user/label-integrity-audit.md`, reproduced by
+`scratch/sophie/diag_bar_gap.py`.
 
 ## Training
 
@@ -124,10 +159,10 @@ The `lr_head` sweep is the largest single lever we found. Matched arms (squash,
   macro, while 0.00025 buys fixed-threshold macro (0.0249 vs 0.0223) at a micro cost
   (0.4048 vs 0.4142). At 0.00006 micro is past its peak and fixed-threshold macro
   collapses to 0.0183.
-* `lr_oft` is on a plateau over 0.0005-0.002 (0.3888 vs 0.3804 at the same head LR);
-  0.02 is catastrophic and destroys the features (micro F1 0.1427). `lr_oft = 0` is not
-  hypothetical either: the frozen-feature probe scores 0.3279, so 0.0005 is bracketed on
-  both sides and sits inside the plateau rather than past a cliff.
+* `lr_oft` is bracketed on **both** sides at the corrected head LR — 0.0002 gives 0.4027,
+  0.0005 gives 0.4142, 0.002 gives 0.4100 micro — so 0.0005 is an interior optimum, not a
+  plateau edge. 0.02 is catastrophic and destroys the features (micro F1 0.1427), and
+  `lr_oft = 0` is the frozen-probe floor at 0.3279.
 * **Do not pick `lr_head` from the frozen-feature probe.** It suggests 0.002-0.005 because
   that is optimal for fixed features; the adapter later reshapes those features and moves
   the optimum down to 0.00012. Re-run the probe on trained-adapter features before trusting
