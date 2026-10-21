@@ -48,6 +48,11 @@ class TrainConfig:
     # purpose: a staged run and a cold run with otherwise identical settings are different
     # experiments, and must not collide in one directory.
     init_from: str = ""
+    # Read training data straight from the tars instead of the shard cache. Part of the
+    # run identity for the same reason as init_from: a streamed full-corpus pass and a
+    # cached 10k run are different experiments and must not share a directory.
+    stream: bool = False
+    stream_images: int = 0   # 0 = one full pass over the split
     # misc
     seed: int = 1337
     log_every: int = 20

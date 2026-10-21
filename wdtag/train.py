@@ -132,6 +132,26 @@ def dump_debug_pictures(run_dir: str, ds: CacheDataset, indices: list[int],
         json.dump(manifest, f, indent=2)
 
 
+def dump_stream_debug(run_dir: str, x, src: list[tuple[str, str]],
+                      manifest: list[dict]) -> None:
+    """Save exactly what the trainer fed the network, when reading from the tars.
+
+    Same contract as `dump_debug_pictures`: the file name carries the sample key and
+    the tar it came from, so a picture can be traced back to its origin.
+    """
+    from PIL import Image
+
+    d = os.path.join(run_dir, "debugpics")
+    os.makedirs(d, exist_ok=True)
+    for i, (key, tar) in enumerate(src):
+        img = x[i].numpy().transpose(1, 2, 0)  # CHW u8 -> HWC
+        name = f"{key}-{os.path.splitext(tar)[0]}-squash.png"
+        Image.fromarray(img).save(os.path.join(d, name))
+        manifest.append({"file": name, "key": key, "tar": tar, "dataset_id": None})
+    with open(os.path.join(d, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+
 def save_ckpt(path: str, model: DinoTagger, opt, step: int, epoch: int,
               step_in_epoch: int, best: dict, cfg: TrainConfig) -> None:
     torch.save(
@@ -210,6 +230,19 @@ def main() -> None:
                          "CLI flag, not a config field, so sha8 is unaffected.")
     ap.add_argument("--init-from", default="",
                     help="warm-start adapter+head from another run dir (staged training)")
+    ap.add_argument("--stream", action="store_true",
+                    help="stream training data straight from the tars instead of the cache. "
+                         "Required for corpora too big to cache (5.3M images would be ~4.2 TB). "
+                         "CLI flag, so sha8 and resumability are unaffected.")
+    ap.add_argument("--stream-images", type=int, default=0,
+                    help="with --stream: number of samples to train on (default: one full pass "
+                         "over the split, 5,321,713 images)")
+    ap.add_argument("--stream-workers", type=int, default=8,
+                    help="decode threads for --stream (8 measures ~250 img/s, the GPU takes "
+                         "~150 img/s)")
+    ap.add_argument("--ckpt-every-steps", type=int, default=CHECKPOINT_EVERY,
+                    help=f"checkpoint interval (default {CHECKPOINT_EVERY}). A full 5.3M pass is "
+                         "~111k steps, where the default would write ~55 GB, so pass e.g. 5000.")
     a = ap.parse_args()
 
     cfg = load_config(a, ap)
@@ -299,8 +332,20 @@ def main() -> None:
         compiled_optimizer=cfg.compiled_optimizer,
     )
 
-    steps_per_epoch = len(ds_train) // cfg.batch_size
-    total_steps = steps_per_epoch * cfg.epochs
+    ckpt_every = max(1, a.ckpt_every_steps)
+    use_stream = a.stream or bool(getattr(cfg, "stream", False))
+    if use_stream:
+        from .stream import KNOWN_TOTAL
+
+        stream_images = (a.stream_images or getattr(cfg, "stream_images", 0)
+                            or KNOWN_TOTAL["train"])
+        # One pass, so there is no epoch: total_steps is the whole pass.
+        total_steps = -(-stream_images // cfg.batch_size)
+        steps_per_epoch = total_steps
+    else:
+        stream_images = 0
+        steps_per_epoch = len(ds_train) // cfg.batch_size
+        total_steps = steps_per_epoch * cfg.epochs
 
     # ---------------------------------------------------------------- resume
     start_epoch, start_step_in_epoch, global_step = 0, 0, 0
@@ -395,6 +440,87 @@ def main() -> None:
                   f"(selection metric: {a.select_metric}) -> best_val.pt", flush=True)
         return metrics
 
+    def step_once(x, y):
+        """One optimiser step. Shared by the cached and the streamed training loops so
+        the two cannot drift apart."""
+        bases = (cfg.lr_head,) if cfg.freeze_oft else (cfg.lr_oft, cfg.lr_head)
+        for gi, base in enumerate(bases):
+            opt.param_groups[gi]["lr"] = lr_at(global_step, total_steps, base,
+                                               cfg.warmup_steps)
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+        logits = forward(x)
+        loss = F.binary_cross_entropy_with_logits(logits.float(), y)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        if cfg.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(
+                [p for g in opt.param_groups for p in g["params"]], cfg.grad_clip)
+        opt.step()
+        return loss
+
+    if use_stream:
+        # ------------------------------------------------------------ streamed pass
+        from .stream import TarStream
+
+        skip = global_step * cfg.batch_size  # exact: every batch is cfg.batch_size
+        print(f"[stream] one pass over {stream_images:,} images in {total_steps:,} steps, "
+              f"batch {cfg.batch_size}, {a.stream_workers} decode threads"
+              + (f", resuming by skipping {skip:,} samples" if skip else ""), flush=True)
+        sp = TarStream("train", seed=cfg.seed, pass_index=0, batch_size=cfg.batch_size,
+                       n_labels=n_labels, workers=a.stream_workers, prefetch=4,
+                       skip=skip, max_samples=stream_images,
+                       log=lambda m: print(m, flush=True))
+        model.train()
+        t_step = time.time()
+        for x, y, consumed, src in sp.batches():
+            if paused(run_dir):
+                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
+                # this batch has NOT been consumed, so a resume starts at it
+                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
+                print(f"PAUSE file detected -> checkpointed {p} and exiting cleanly",
+                      flush=True)
+                return
+            if debug_done < 100:
+                need = min(100 - debug_done, len(src))
+                dump_stream_debug(run_dir, x[:need], src[:need], debug_manifest)
+                debug_done += need
+                print(f"debugpics: {debug_done}/100 written to {run_dir}\\debugpics",
+                      flush=True)
+
+            loss = step_once(x, y)
+            global_step += 1
+
+            if global_step % cfg.log_every == 0:
+                dt = time.time() - t_step
+                t_step = time.time()
+                ips = cfg.log_every * cfg.batch_size / max(dt, 1e-9)
+                _lrs = "/".join(f"{g['lr']:.2e}" for g in opt.param_groups)
+                print(f"step {global_step}/{total_steps} loss {loss.item():.4f} lr {_lrs} "
+                      f"{ips:.0f} img/s vram {torch.cuda.max_memory_allocated()/1e9:.1f}GB",
+                      flush=True)
+
+            if global_step % ckpt_every == 0:
+                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
+                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
+                print(f"checkpoint {p}", flush=True)
+
+            if a.max_steps and global_step >= a.max_steps:
+                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
+                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
+                print("max-steps reached, stopped", flush=True)
+                return
+
+            if a.val_every_steps and global_step % a.val_every_steps == 0:
+                run_val(global_step, 0)
+
+        print(f"training done in {(time.time()-t_start)/60:.1f} min, best {best}", flush=True)
+        p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
+        save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
+        from .evaluate import eval_run
+        eval_run(run_dir, "test")
+        return
+
     for epoch in range(start_epoch, cfg.epochs):
         perm = epoch_perm(len(ds_train), cfg.seed, epoch)
         skip_batches = start_step_in_epoch if epoch == start_epoch else 0
@@ -425,21 +551,7 @@ def main() -> None:
                 print(f"PAUSE file detected -> checkpointed {p} and exiting cleanly", flush=True)
                 return
 
-            bases = (cfg.lr_head,) if cfg.freeze_oft else (cfg.lr_oft, cfg.lr_head)
-            for gi, base in enumerate(bases):
-                opt.param_groups[gi]["lr"] = lr_at(global_step, total_steps, base, cfg.warmup_steps)
-
-            x = x.to(device, non_blocking=True)
-            y = y.to(device, non_blocking=True)
-            logits = forward(x)
-            loss = F.binary_cross_entropy_with_logits(logits.float(), y)
-
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            if cfg.grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    [p for g in opt.param_groups for p in g["params"]], cfg.grad_clip)
-            opt.step()
+            loss = step_once(x, y)
             global_step += 1
 
             if global_step % cfg.log_every == 0:
@@ -452,7 +564,7 @@ def main() -> None:
                       f"{ips:.0f} img/s vram {torch.cuda.max_memory_allocated()/1e9:.1f}GB",
                       flush=True)
 
-            if global_step % CHECKPOINT_EVERY == 0:
+            if global_step % ckpt_every == 0:
                 p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
                 # batch `step_in_epoch` is done -> the next one to run is +1
                 save_ckpt(p, model, opt, global_step, epoch, step_in_epoch + 1, best, cfg)
@@ -482,5 +594,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
