@@ -1,0 +1,25 @@
+# Checkpoints and caches are large artifacts, not source.
+runs/**/*.pt
+runs/**/*.npy
+runs/**/*.npz
+runs/**/debugpics/
+runs/**/*.png
+# Keep provenance: runs/<sha8>/config.json, train_log.jsonl, eval_test.json
+
+# Pause/stop flags are runtime state
+.PAUSE
+.PAUSE.txt
+.PUASE
+.PUASE.txt
+PAUSE
+
+# Python
+__pycache__/
+*.py[cod]
+.env/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
