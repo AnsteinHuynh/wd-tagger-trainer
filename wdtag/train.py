@@ -335,8 +335,9 @@ def main() -> None:
     # (e.g. stage 1 trains the head with the adapters frozen at identity, stage 2
     # starts from it with a gentle lr_oft). Optimizer state and schedule are NOT
     # inherited -- stage 2 is a new run with its own warmup and cosine.
-    if a.init_from:
-        src = a.init_from
+    init_from = a.init_from or getattr(cfg, "init_from", "")
+    if init_from:
+        src = init_from
         cand = os.path.join(src, "best_val.pt")
         if not os.path.exists(cand):
             srcs = sorted(p for p in os.listdir(src)

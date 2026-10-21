@@ -44,6 +44,10 @@ class TrainConfig:
     # staged training: stage 1 leaves the adapters at identity so the head is
     # trained against fixed features; stage 2 warm-starts from it with --init-from.
     freeze_oft: bool = False
+    # run directory whose adapter+head warm-start this run. Part of the run identity on
+    # purpose: a staged run and a cold run with otherwise identical settings are different
+    # experiments, and must not collide in one directory.
+    init_from: str = ""
     # misc
     seed: int = 1337
     log_every: int = 20

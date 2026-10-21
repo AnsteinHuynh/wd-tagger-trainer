@@ -32,6 +32,7 @@ Frozen DINOv3-B/16 backbone (87.0 M params, never updated) + 1.30 M OFTv2 adapte
 | squash · lr_oft 0.002 · lr_head 0.00012 · seed 1337 · 8 ep [5f5190a2] | 0.0211 | 0.0223 | 0.0346 | 0.0171 |
 | pad · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [d0ab7d29] | 0.0205 | 0.0220 | 0.0359 | 0.0161 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 20 ep [fa51da74] | 0.0274 | 0.0275 | 0.0343 | 0.0266 |
+| squash · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [2e439633] | 0.0168 | 0.0185 | 0.0324 | 0.0129 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [e6bc2879] | 0.0246 | 0.0255 | 0.0363 | 0.0211 |
 | pad · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [7ff9ee38] | 0.0245 | 0.0253 | 0.0368 | 0.0206 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 2025 · 8 ep [af7c4ac4] | 0.0205 | 0.0211 | 0.0312 | 0.0170 |
@@ -48,6 +49,7 @@ Frozen DINOv3-B/16 backbone (87.0 M params, never updated) + 1.30 M OFTv2 adapte
 | squash · lr_oft 0.002 · lr_head 0.00012 · seed 1337 · 8 ep [5f5190a2] | 0.4100 | 0.4388 | 0.6421 | 0.3011 |
 | pad · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [d0ab7d29] | 0.4078 | 0.4384 | 0.6496 | 0.2972 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 20 ep [fa51da74] | 0.3800 | 0.3835 | 0.4515 | 0.3281 |
+| squash · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [2e439633] | 0.3323 | 0.3851 | 0.6761 | 0.2203 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [e6bc2879] | 0.3888 | 0.4080 | 0.5646 | 0.2965 |
 | pad · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [7ff9ee38] | 0.3985 | 0.4159 | 0.5646 | 0.3079 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 2025 · 8 ep [af7c4ac4] | 0.3776 | 0.3960 | 0.5468 | 0.2884 |
@@ -66,6 +68,7 @@ With per-label thresholds tuned on validation:
 | squash · lr_oft 0.002 · lr_head 0.00012 · seed 1337 · 8 ep [5f5190a2] | 0.0311 | 0.0322 | 0.0326 | 0.0421 | 0.3755 | 0.3779 | 0.3262 | 0.4423 |
 | pad · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [d0ab7d29] | 0.0304 | 0.0309 | 0.0320 | 0.0376 | 0.3997 | 0.4001 | 0.3620 | 0.4462 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 20 ep [fa51da74] | 0.0284 | 0.0285 | 0.0309 | 0.0338 | 0.3681 | 0.3686 | 0.3312 | 0.4144 |
+| squash · lr_oft 0.0005 · lr_head 0.00012 · seed 1337 · 8 ep [2e439633] | 0.0280 | 0.0285 | 0.0296 | 0.0369 | 0.3543 | 0.3575 | 0.3030 | 0.4266 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [e6bc2879] | 0.0277 | 0.0280 | 0.0315 | 0.0325 | 0.3807 | 0.3804 | 0.3498 | 0.4176 |
 | pad · lr_oft 0.0005 · lr_head 0.004 · seed 1337 · 8 ep [7ff9ee38] | 0.0277 | 0.0279 | 0.0319 | 0.0316 | 0.3881 | 0.3874 | 0.3612 | 0.4192 |
 | squash · lr_oft 0.0005 · lr_head 0.004 · seed 2025 · 8 ep [af7c4ac4] | 0.0238 | 0.0238 | 0.0269 | 0.0280 | 0.3703 | 0.3698 | 0.3417 | 0.4041 |
@@ -96,10 +99,10 @@ Inside the bracket there is a small micro/macro trade: 0.00012 maximises micro a
 
 | lr_oft | lr_head | seed | micro F1 pad | micro F1 squash | delta | macro F1 pad | macro F1 squash |
 |---|---|---|---|---|---|---|---|
-| 0.0005 | 0.00012 | 1337 | 0.4078 | 0.4142 | -0.0064 | 0.0205 | 0.0223 |
+| 0.0005 | 0.00012 | 1337 | 0.4078 | 0.3323 | +0.0755 | 0.0205 | 0.0168 |
 | 0.0005 | 0.004 | 1337 | 0.3985 | 0.3888 | +0.0097 | 0.0245 | 0.0246 |
 
-Seed spread (squash, lr_oft 0.0005, lr_head 0.00012, 2 seeds [1337, 2025]): micro F1 0.4142-0.4186, i.e. **0.0044**. A geometry difference smaller than that is not resolvable with this experiment, and it is also the error bar on our own headline number: 0.4164 on average.
+Seed spread (squash, lr_oft 0.0005, lr_head 0.00012, 2 seeds [1337, 2025]): micro F1 0.3323-0.4186, i.e. **0.0862**. A geometry difference smaller than that is not resolvable with this experiment, and it is also the error bar on our own headline number: 0.3755 on average.
 
 Reading: at lr_oft 0.002 an earlier pad arm (since removed) scored 0.3459 vs squash 0.3804, but once the head learning rate was corrected to 0.00012 and both arms were re-run at matching lr_oft/lr_head/seed, pad got 0.4078 against squash seeds of 0.4142 and 0.4186 micro. Squash is ahead on all four metrics (micro, macro, tuned micro, tuned macro) by 0.002-0.011, i.e. at or just outside the 0.0044 matched seed spread -- so at most a hair better, certainly not worse.
 
@@ -152,6 +155,7 @@ This is what OFTv2 has to beat to be worth its parameters, and it is the honest 
 | `5f5190a2` | squash | 0.002 | 0.00012 | 8 | 32 | 0.4100 | 0.0211 | 0.0311 |
 | `d0ab7d29` | pad | 0.0005 | 0.00012 | 8 | 32 | 0.4078 | 0.0205 | 0.0304 |
 | `fa51da74` | squash | 0.0005 | 0.004 | 20 | 32 | 0.3800 | 0.0274 | 0.0284 |
+| `2e439633` | squash | 0.0005 | 0.00012 | 8 | 32 | 0.3323 | 0.0168 | 0.0280 |
 | `e6bc2879` | squash | 0.0005 | 0.004 | 8 | 32 | 0.3888 | 0.0246 | 0.0277 |
 | `7ff9ee38` | pad | 0.0005 | 0.004 | 8 | 32 | 0.3985 | 0.0245 | 0.0277 |
 | `af7c4ac4` | squash | 0.0005 | 0.004 | 8 | 32 | 0.3776 | 0.0205 | 0.0238 |
