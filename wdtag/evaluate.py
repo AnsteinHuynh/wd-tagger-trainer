@@ -28,8 +28,7 @@ def _dump(path: str, obj: dict) -> None:
 
 
 def eval_run(run_dir: str, split: str = "test") -> dict:
-    with open(os.path.join(run_dir, "config.json"), encoding="utf-8") as f:
-        cfg = TrainConfig(**json.load(f))
+    cfg = TrainConfig.from_json(os.path.join(run_dir, "config.json"))
     space = load_label_space()
     model = DinoTagger(cfg, len(space)).cuda()
     ck = torch.load(os.path.join(run_dir, "best_val.pt"), map_location="cuda", weights_only=False)

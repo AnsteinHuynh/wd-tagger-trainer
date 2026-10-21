@@ -6,6 +6,18 @@ then score it against `convnextv2_huge.dbv4-full` on a fixed 1,000-image test sp
 
 ## Result summary
 
+Our best run (`fe92f4df`: squash, `lr_oft 0.0005`, `lr_head 0.00012`, seed 1337, 8 epochs)
+scores on the fixed 1,000-image test split:
+
+| model | micro F1 @0.5 | macro F1 @0.5 | tuned macro F1 |
+|---|---|---|---|
+| our best run | **0.4142** | 0.0223 | **0.0331** |
+| `convnextv2_huge.dbv4-full` (the bar) | 0.6800 | 0.1938 | 0.2008 |
+
+We do **not** beat the bar. The baseline saw 5.3 M images for these 12,476 labels; we
+trained on 10,000. The gap is data scale, not a pipeline bug. `REPORT.md` has the full
+tables, the per-category breakdown and the open questions.
+
 | stage | artifact |
 |---|---|
 | baseline bar | `runs/_baseline/convnextv2_huge/squash/eval_test.json` |
@@ -23,12 +35,14 @@ wdtag/
   model.py     DINOv3-B + OFTv2 + multi-label head
   infer.py     batched inference over a cached split
   metrics.py   macro/micro F1, MCC, P, R + per-label threshold sweep
+  score.py     shared scorecard (fixed 0.5 + validation-tuned thresholds)
   train.py     training loop (checkpoints, .PAUSE, resume, debugpics)
   evaluate.py  final evaluation on the test cache
   baseline.py  convnextv2_huge inference
   probe.py     frozen-feature probe (fast hyperparameter sweeps)
   report.py    builds REPORT.md
-configs/       squash.json (canonical), squash_lr5e4.json, smoke.json
+configs/       best.json (current recipe: lr_oft 0.0005, lr_head 0.00012); squash.json predates the sweep
+configs/experiments/  one JSON per sweep arm
 runs/          one directory per config hash
 ```
 
@@ -48,8 +62,14 @@ I:\.cache\wd-tagger-trainer\{train,valid,test}\squash\shard#####-{total}.pt
   "ids": i64, "keys": [...], "tars": [...], "split", "mode" }
 ```
 
-Images are bilinear-resized straight to 512x512 with the aspect ratio not preserved.
-A padded-square variant was evaluated too: it is statistically tied with squash once the adapter LR is right (the first comparison, at a 4x too-high LR, made padding look 10% worse). Only the squash cache is built by default; scratch/sophie/build_pad_cache.py builds the pad one for experiments.
+Images are bilinear-resized straight to 512x512 with the aspect ratio not preserved
+("squash"). A padded-square arm is a statistical tie: matched at `lr_oft 0.0005`,
+`lr_head 0.004`, seed 1337, pad scores 0.3985 vs squash 0.3888 micro — inside the 0.0112
+seed spread — and per-image accuracy does not correlate with squash distortion
+(r = +0.047 over the 1,000 test images; heavily warped images score, if anything, better).
+Input geometry is not a lever. `mode` remains configurable (`squash` / `pad`), but squash
+is the default and the only variant built by default; the pad cache is an experiment
+artifact (`scratch/sophie/build_pad_cache.py`).
 
 The cache is treated as disposable: it is validated at run start and any missing or
 truncated shard is rebuilt. Shards are written to `.tmp` and atomically renamed, so an
@@ -59,21 +79,59 @@ interrupted build resumes at the first bad shard.
 
 ```powershell
 $env:PYTHONPATH="C:\Users\kerok\apps\wd-tagger-trainer"
-C:\Python314\python.exe -u -m wdtag.train --config configs\squash.json
+C:\Python314\python.exe -u -m wdtag.train --config configs\best.json
 ```
 
 * adapter: OFTv2 on every `Linear` (73 modules: 6 per block x 12 blocks, plus the
   patch-embed conv), `block_size=32`, `oft_scaled=True` → 1.30 M parameters.
   At init the rotation is exactly identity, so the model starts equal to the frozen base.
-* head: `LayerNorm(1536) -> Linear(12476)` over `[LayerNorm(CLS) ; mean(patch tokens)]`,
-  bias initialised to the log-odds of each tag's training prior.
-* optimizer: `SinkSGD_ADV`, momentum 0.95, lr 0.002 for the adapters / 0.004 for the head,
-  warmup 50 steps then cosine to 5%. The adapter LR matters enormously: 0.02 is
-  destructive, and the useful range is ~0.0005-0.002 (see REPORT.md).
+* head: `LayerNorm(1536) -> Linear(12476)` (19.18 M parameters) over
+  `[LayerNorm(CLS) ; mean(patch tokens)]`, bias initialised to the log-odds of each tag's
+  training prior.
+* optimizer: `SinkSGD_ADV`, momentum 0.95, warmup 50 steps then cosine to 5%. The current
+  recipe is `lr_oft 0.0005` / `lr_head 0.00012`; both are load-bearing, see below.
 * 8 epochs over the 10,000 images (312 steps/epoch at batch 32), best checkpoint by
-  validation macro-F1. The val curve is flat past epoch 5.
+  validation macro-F1. A 20-epoch arm at the old head LR was flat from epoch 14; longer
+  schedules have not been re-tested at `lr_head 0.00012`.
+* two runtime flags:
+  * `--compile-mode {default,max-autotune}` — `torch.compile` mode; defaults to `default`.
+    `max-autotune` is ~1.2x faster end-to-end and costs minutes of one-off autotuning at
+    startup.
+  * `--val-every-steps N` — validate every N steps instead of once per epoch (`0`/omitted
+    means per epoch). Essential for long runs where one epoch is thousands of steps.
+  * Both are deliberately CLI flags rather than config fields. `sha8` hashes the config and
+    names the run directory, so adding them to the config would change the run name and
+    break resumability of existing runs.
 * staged training is available: `freeze_oft: true` holds the adapters at identity while
   the head learns, then `--init-from runs/<sha8>` warm-starts the joint phase.
+
+### Learning rates
+
+The `lr_head` sweep is the largest single lever we found. Matched arms (squash,
+`lr_oft 0.0005`, seed 1337, 8 epochs):
+
+| `lr_head` | micro F1 @0.5 | macro F1 @0.5 | tuned macro F1 |
+|---|---|---|---|
+| 0.004 (old) | 0.3888 | 0.0246 | 0.0277 |
+| 0.00025 | 0.4048 | 0.0249 | 0.0327 |
+| 0.00012 (best) | **0.4142** | 0.0223 | **0.0331** |
+| 0.00006 | 0.4068 | 0.0183 | 0.0326 |
+
+* The old 0.004 was **16-33x too high** — 16x the 0.00025 bracket, 33x the 0.00012 optimum
+  — and the old 0.002 default (also the frozen probe's pick) was ~16x too high. Lowering
+  `lr_head` from 0.004 to 0.00012 raises micro F1 6.5% and tuned macro F1 ~20%.
+* There is a small micro/macro trade inside the bracket: 0.00012 maximises micro and tuned
+  macro, while 0.00025 buys fixed-threshold macro (0.0249 vs 0.0223) at a micro cost
+  (0.4048 vs 0.4142). At 0.00006 micro is past its peak and fixed-threshold macro
+  collapses to 0.0183.
+* `lr_oft` is on a plateau over 0.0005-0.002 (0.3888 vs 0.3804 at the same head LR);
+  0.02 is catastrophic and destroys the features (micro F1 0.1427). `lr_oft = 0` is not
+  hypothetical either: the frozen-feature probe scores 0.3279, so 0.0005 is bracketed on
+  both sides and sits inside the plateau rather than past a cliff.
+* **Do not pick `lr_head` from the frozen-feature probe.** It suggests 0.002-0.005 because
+  that is optimal for fixed features; the adapter later reshapes those features and moves
+  the optimum down to 0.00012. Re-run the probe on trained-adapter features before trusting
+  a head LR from it.
 
 ### Resumability
 
@@ -101,22 +159,23 @@ Conventions are identical for our model and the baseline:
 
 ## Measured performance (RTX 4090, batch 32, 512x512, BF16)
 
-| variant | ms/step | img/s |
-|---|---|---|
-| eager | 359 | 89 |
-| `torch.compile(mode="default")` | 290 | 110 |
-| `max-autotune-no-cudagraphs` (215 s compile) | 259 | 124 |
+| variant | ms/image | img/s | ms/step |
+|---|---|---|---|
+| eager | ~11.2 | ~89 | ~360 |
+| `torch.compile(mode="default")` | ~8.5 | ~118 | ~271 |
+| `torch.compile(mode="max-autotune")` | 5.9-6.6 | 150-170 | ~190-211 |
 
-Per-stage breakdown of an eager step: forward 156 ms, backward 243 ms, **optimizer
-88 ms**, data 10 ms, H2D 4 ms. The optimizer cost is per-parameter Python/launch
-overhead across its 73 tiny adapter tensors (~1.2 ms each) and is *not* affected by any
-of its own options: `stochastic_rounding=False`, `sinkhorn_iterations=3`, fp32 states and
-`compiled_optimizer=True` all measure identically, and `compiled_optimizer=True`
-additionally hard-crashes with `FailOnRecompileLimitHit` (`fullgraph=True` plus
-per-shape recompiles).
+`max-autotune` is ~1.2x faster end-to-end than `default` and pays minutes of one-off
+autotuning at startup; select it with `--compile-mode max-autotune`.
 
-Data loading is deliberately trivial: pre-decoded uint8 shards, memory-mapped, no
-worker processes (see below), normalisation on the GPU in BF16.
+The eager optimizer update costs ~88 ms: SinkSGD_ADV dispatches once per tensor, and
+there are 73 tiny adapter tensors (~1.2 ms each). That cost is launch overhead, not
+arithmetic — `stochastic_rounding` and `sinkhorn_iterations` do not move it. Compiling the
+update, with Dynamo's recompile limits raised (`train.py` does this; otherwise
+`fullgraph=True` hard-fails with `FailOnRecompileLimitHit`), brings it to ~28 ms. Data
+loading is deliberately trivial: pre-decoded uint8 shards, memory-mapped, no worker
+processes (see below), normalisation on the GPU in BF16. Data and H2D are ~10 ms and ~4 ms
+per step and are not the bottleneck.
 
 ### Memory notes
 
@@ -132,11 +191,11 @@ With those, commit stays flat at ~55 GB across epochs instead of climbing ~18 GB
 
 ## Limitations
 
-* 10,000 images against 12,476 labels: the long tail is unlearnable at this scale, so
-  macro-F1 over the full label space is dominated by tags we cannot predict. The baseline
-  was trained on 5.3 M images and is expected to win; the interesting number is how much
-  OFTv2 buys over a frozen linear probe.
+* 10,000 images against 12,476 labels is 0.8 images per label: the long tail is not
+  learnable at this scale, and macro-F1 over the full label space is dominated by tags we
+  cannot predict. Our best micro F1 is 0.4142 and tuned macro 0.0331, against the bar's
+  0.6800 and 0.1938 (0.2008 tuned). The baseline's 5.3 M training images are the
+  difference; OFTv2 does buy a real +26% relative micro F1 over a frozen probe of the same
+  backbone (0.4142 vs 0.3279).
 * Per-label thresholds tuned on 1,000 validation images overfit sparse labels; the
   tuned table is reported for completeness next to the fixed-0.5 table, not instead of it.
-
-

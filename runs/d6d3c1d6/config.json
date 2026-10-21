@@ -26,5 +26,6 @@
   "freeze_oft": false,
   "seed": 1337,
   "labels_per_image_smoothing": 0.0,
-  "log_every": 20
+  "log_every": 20,
+  "_sha8": "d6d3c1d6"
 }

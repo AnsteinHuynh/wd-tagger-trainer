@@ -14,6 +14,7 @@ import json
 import math
 import os
 import random
+import re
 import time
 
 import numpy as np
@@ -31,6 +32,33 @@ from .model import DinoTagger
 WS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PAUSE_NAMES = (".PAUSE", ".PAUSE.txt", ".PUASE", ".PUASE.txt", "PAUSE")
+
+# Checkpoint selection: CLI-only, like --compile-mode/--val-every-steps, so it
+# never changes sha8.  `micro` is the default because macro-F1 on this label
+# space is dominated by thousands of rare/unseen tags and demonstrably picks
+# worse checkpoints (run fa51da74: macro selected step 2496 / micro 0.3800,
+# while micro actually peaked at 0.3938 on step 5304).
+SELECT_METRICS = {
+    "micro": "micro_f1",
+    "macro": "macro_f1",
+    "supported_macro": "supported_macro_f1",
+}
+HEX8 = re.compile(r"^[0-9a-f]{8}$")
+
+
+def best_value(best: dict, metric: str) -> float:
+    """Best val score recorded for the chosen metric (-1.0 if unknown).
+
+    Checkpoints written before --select-metric existed only carry
+    `val_macro_f1`; that legacy key is still honoured for macro selection and
+    is kept in every new `best` dict for compatibility.
+    """
+    key = f"val_{SELECT_METRICS[metric]}"
+    if key in best:
+        return float(best[key])
+    if metric == "macro":
+        return float(best.get("val_macro_f1", -1.0))
+    return -1.0
 
 
 def paused(run_dir: str) -> bool:
@@ -128,9 +156,47 @@ def save_ckpt(path: str, model: DinoTagger, opt, step: int, epoch: int,
     )
 
 
+def load_config(a: argparse.Namespace, ap: argparse.ArgumentParser) -> TrainConfig:
+    """Resolve --run/--config into a TrainConfig.
+
+    --run wins over --config.  The run's config.json carries `_sha8`; it must
+    resolve back to the same directory, otherwise a resume would silently start
+    a new run next to it.  An unpinned 8-hex run is pinned to its dirname here.
+    """
+    if a.run:
+        run_path = os.path.normpath(a.run)
+        cfg_path = os.path.join(run_path, "config.json")
+        if not os.path.isfile(cfg_path):
+            ap.error(f"--run {a.run}: no config.json found in that directory")
+        if a.config:
+            print(f"--run given; ignoring --config {a.config}", flush=True)
+        cfg = TrainConfig.from_json(cfg_path)
+        if not getattr(cfg, "_sha8_pin", None):
+            base = os.path.basename(run_path)
+            if not HEX8.match(base):
+                ap.error(f"--run {a.run}: config.json has no _sha8 and the directory "
+                         f"name is not an 8-hex run id")
+            cfg._sha8_pin = base
+            print(f"--run: config.json had no _sha8; pinned it to {base}", flush=True)
+        resolved = os.path.join(RUNS_ROOT, cfg.sha8())
+        if (os.path.normcase(os.path.abspath(resolved))
+                != os.path.normcase(os.path.abspath(run_path))):
+            ap.error(f"--run {a.run}: its config.json pins sha8 {cfg.sha8()}, which resolves "
+                     f"to {resolved}; refusing to resume a different run directory")
+        return cfg
+    if a.config:
+        return TrainConfig.from_json(a.config)
+    ap.error("give --config FILE or --run DIR")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True)
+    ap.add_argument("--config", default="",
+                    help="TrainConfig JSON (required unless --run is given)")
+    ap.add_argument("--run", default="",
+                    help="run directory to resume, e.g. --run runs/fe92f4df; loads that "
+                         "directory's config.json, whose _sha8 pin resolves back to it. "
+                         "Takes precedence over --config.")
     ap.add_argument("--fresh", action="store_true", help="ignore existing checkpoints")
     ap.add_argument("--max-steps", type=int, default=0)
     ap.add_argument("--val-every-steps", type=int, default=0,
@@ -139,11 +205,14 @@ def main() -> None:
     ap.add_argument("--compile-mode", default="",
                     help="torch.compile mode override, e.g. 'max-autotune' (~1.4x faster than "
                          "'default' on a 4090, measured). CLI flag so sha8 is unaffected.")
+    ap.add_argument("--select-metric", choices=tuple(SELECT_METRICS), default="micro",
+                    help="validation metric that selects best_val.pt (default: micro). "
+                         "CLI flag, not a config field, so sha8 is unaffected.")
     ap.add_argument("--init-from", default="",
                     help="warm-start adapter+head from another run dir (staged training)")
     a = ap.parse_args()
 
-    cfg = TrainConfig.from_json(a.config)
+    cfg = load_config(a, ap)
     torch.manual_seed(cfg.seed)
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -152,10 +221,17 @@ def main() -> None:
     space = load_label_space()
     n_labels = len(space)
     run_dir = cfg.run_dir()
+    if not getattr(cfg, "_sha8_pin", None):
+        # Freeze this brand-new run's identity in its config.json.  Without the
+        # pin, any later added/removed dataclass field would silently re-key it
+        # and a resume would start a new directory instead of continuing.
+        cfg._sha8_pin = cfg.sha8()
     log_path = os.path.join(run_dir, "train_log.jsonl")
     with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(cfg.to_dict(), f, indent=2)
     print(f"run dir: {run_dir}\nconfig sha8: {cfg.sha8()}", flush=True)
+    print(f"checkpoint selection metric: {SELECT_METRICS[a.select_metric]} "
+          f"(--select-metric {a.select_metric})", flush=True)
 
     ensure_cache("train", mode=cfg.mode)
     ensure_cache("valid", mode=cfg.mode)
@@ -290,19 +366,32 @@ def main() -> None:
         t0 = time.time()
         metrics, _ = evaluate(forward, model, ds_val, val_targets, cfg.batch_size, device)
         rec = {"step": step, "epoch": ep, **metrics, "val_seconds": round(time.time() - t0, 1)}
+        sel_key = SELECT_METRICS[a.select_metric]
         print(f"VAL step {step} (ep {ep}): macro_f1 {metrics['macro_f1']:.4f} "
               f"macro_mcc {metrics['macro_mcc']:.4f} micro_f1 {metrics['micro_f1']:.4f} "
               f"micro_mcc {metrics['micro_mcc']:.4f} "
-              f"(supported_macro_f1 {metrics.get('supported_macro_f1', float('nan')):.4f})",
-              flush=True)
+              f"(supported_macro_f1 {metrics.get('supported_macro_f1', float('nan')):.4f}) "
+              f"| best by {sel_key}", flush=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
-        if metrics["macro_f1"] > best["val_macro_f1"]:
-            best = {"val_macro_f1": metrics["macro_f1"], "step": step, "epoch": ep}
+        raw = metrics.get(sel_key)
+        score = float(raw) if raw is not None else float("nan")
+        if math.isfinite(score) and score > best_value(best, a.select_metric):
+            best = {
+                # legacy key kept for old checkpoints/readers: macro selection
+                # still reads it from checkpoints written before this change
+                "val_macro_f1": metrics["macro_f1"],
+                "val_micro_f1": metrics["micro_f1"],
+                "val_supported_macro_f1": metrics.get("supported_macro_f1", -1.0),
+                "select_metric": a.select_metric,
+                "step": step,
+                "epoch": ep,
+            }
             torch.save({"adapter": model.adapter_state_dict(), "config": cfg.to_dict(),
                         "metrics": metrics, "step": step},
                        os.path.join(run_dir, "best_val.pt"))
-            print(f"new best val macro_f1 {metrics['macro_f1']:.4f} -> best_val.pt", flush=True)
+            print(f"new best val {sel_key} {score:.4f} "
+                  f"(selection metric: {a.select_metric}) -> best_val.pt", flush=True)
         return metrics
 
     for epoch in range(start_epoch, cfg.epochs):

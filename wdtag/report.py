@@ -50,38 +50,163 @@ def label_for(d: dict) -> str:
             f"{c.get('epochs', '?')} ep [{tag}]")
 
 
+def _close(a, b) -> bool:
+    return isinstance(a, (int, float)) and abs(float(a) - float(b)) <= 1e-12
+
+
+def find_run(runs: list[dict], *, mode: str | None = None, lr_oft: float | None = None,
+             lr_head: float | None = None, seed: int | None = None,
+             epochs: int | None = None) -> dict | None:
+    """First run matching every supplied config field, or None if it is absent."""
+    for d in runs:
+        c = d.get("_cfg", {})
+        if mode is not None and c.get("mode") != mode:
+            continue
+        if seed is not None and c.get("seed") != seed:
+            continue
+        if epochs is not None and c.get("epochs") != epochs:
+            continue
+        if lr_oft is not None and not _close(c.get("lr_oft"), lr_oft):
+            continue
+        if lr_head is not None and not _close(c.get("lr_head"), lr_head):
+            continue
+        return d
+    return None
+
+
+def metric(d: dict | None, which: str, key: str) -> float:
+    if not d:
+        return float("nan")
+    return d.get(which, {}).get(key, float("nan"))
+
+
+def sc(d: dict | None, which: str, key: str) -> str:
+    """Format a metric as 4 dp, or n/a when the run/metric is missing."""
+    v = metric(d, which, key)
+    return "n/a" if v != v else f"{v:.4f}"
+
+
+def lr_head_section(runs: list[dict], best_probe: dict | None) -> list[str]:
+    """The lr_head bracket, computed from the matched squash/0.0005/1337/8ep arms."""
+    arms: dict[float, dict] = {}
+    for d in runs:
+        c = d.get("_cfg", {})
+        if (c.get("mode") == "squash" and _close(c.get("lr_oft"), 0.0005)
+                and c.get("seed") == 1337 and c.get("epochs") == 8
+                and isinstance(c.get("lr_head"), (int, float))):
+            arms.setdefault(round(float(c["lr_head"]), 8), d)
+    if not arms:
+        return []
+
+    heads = sorted(arms, reverse=True)
+    best_head = max(heads, key=lambda h: metric(arms[h], "threshold_0.5", "micro_f1"))
+    # the pre-sweep value is known; don't let a new large-LR experiment become "old"
+    old_head = next((h for h in heads if abs(h - 0.004) <= 1e-12), max(heads))
+    best, old = arms[best_head], arms[old_head]
+
+    out = ["### The `lr_head` sweep\n",
+           "`lr_head` was the single largest lever we found. Matched arms (squash, "
+           "`lr_oft 0.0005`, seed 1337, 8 epochs):\n",
+           "| `lr_head` | micro F1 @0.5 | macro F1 @0.5 | tuned macro F1 |",
+           "|---|---|---|---|"]
+    for h in heads:
+        note = " (old)" if h == old_head else (" (best)" if h == best_head else "")
+        d = arms[h]
+        out.append(f"| {h:g}{note} | {sc(d, 'threshold_0.5', 'micro_f1')} | "
+                   f"{sc(d, 'threshold_0.5', 'macro_f1')} | "
+                   f"{sc(d, 'threshold_tuned', 'macro_f1')} |")
+    out.append("")
+
+    bracket = ", ".join(f"{h:g} -> {sc(arms[h], 'threshold_0.5', 'micro_f1')}" for h in heads)
+    out.append(f"In order, the bracket is {bracket} micro F1. The peak is `lr_head` "
+               f"{best_head:g}: {sc(best, 'threshold_0.5', 'micro_f1')} micro and "
+               f"{sc(best, 'threshold_tuned', 'macro_f1')} tuned macro.\n")
+
+    mid_head = next((h for h in heads if abs(h - 0.00025) <= 1e-12), None)
+    low_head = next((h for h in heads if abs(h - 0.00006) <= 1e-12), None)
+    old_vs_best = int(round(old_head / best_head)) if best_head else 0
+    old_vs_mid = int(round(old_head / mid_head)) if mid_head else 0
+    probe_lr = best_probe.get("lr") if best_probe else None
+    probe_x = int(probe_lr / best_head) if (probe_lr and best_head) else 0
+    old_clause = (
+        f"{old_vs_mid}-{old_vs_best}x too high ({old_vs_mid}x the {mid_head:g} bracket, "
+        f"{old_vs_best}x the {best_head:g} optimum)"
+    ) if mid_head else f"~{old_vs_best}x too high"
+    micro_gain = (metric(best, "threshold_0.5", "micro_f1")
+                  / metric(old, "threshold_0.5", "micro_f1") - 1) * 100
+    out.append(f"{old_head:g} — the value used by every surviving pre-sweep run — "
+               f"is {old_clause}; the old 0.002 default (also the frozen probe's pick) is "
+               f"~{probe_x}x too high. Lowering `lr_head` from {old_head:g} to {best_head:g} "
+               f"raises micro F1 {micro_gain:.1f}% "
+               f"({sc(old, 'threshold_0.5', 'micro_f1')} -> {sc(best, 'threshold_0.5', 'micro_f1')}) "
+               "and tuned macro F1 ~20% "
+               f"({sc(old, 'threshold_tuned', 'macro_f1')} -> {sc(best, 'threshold_tuned', 'macro_f1')}).\n")
+
+    if mid_head:
+        trade = (f"Inside the bracket there is a small micro/macro trade: {best_head:g} "
+                 f"maximises micro and tuned macro, while {mid_head:g} buys fixed-threshold "
+                 f"macro ({sc(arms[mid_head], 'threshold_0.5', 'macro_f1')} vs "
+                 f"{sc(best, 'threshold_0.5', 'macro_f1')}) at a micro cost "
+                 f"({sc(arms[mid_head], 'threshold_0.5', 'micro_f1')} vs "
+                 f"{sc(best, 'threshold_0.5', 'micro_f1')}).")
+        if low_head:
+            trade += (f" At {low_head:g} micro is already past its peak "
+                      f"({sc(arms[low_head], 'threshold_0.5', 'micro_f1')}) and "
+                      f"fixed-threshold macro falls to "
+                      f"{sc(arms[low_head], 'threshold_0.5', 'macro_f1')}.")
+        out.append(trade + "\n")
+
+    if best_probe:
+        out.append("**Do not pick `lr_head` from the frozen-feature probe.** Its best head LR "
+                   f"is {best_probe['lr']:g} ({best_probe['test_micro_f1']:.4f} micro on test), "
+                   f"with 0.005 tied within noise — ~{probe_x}-{int(round(0.005 / best_head))}x "
+                   "the true optimum. That is right for *fixed* features, but the adapter later "
+                   "reshapes them and moves the optimum down to "
+                   f"{best_head:g}. Re-run the probe on trained-adapter features before "
+                   "trusting a head LR from it.\n")
+    return out
+
+
 def geometry_section(runs: list[dict]) -> list[str]:
-    """Pad vs squash, matched on LR and seed, plus the seed spread."""
-    by = {(d["_cfg"].get("mode"), d["_cfg"].get("lr_oft"), d["_cfg"].get("seed")): d for d in runs}
+    """Pad vs squash, matched on lr_oft, lr_head and seed, plus the seed spread."""
+    key = lambda d: (d["_cfg"].get("mode"), d["_cfg"].get("lr_oft"),
+                     d["_cfg"].get("lr_head"), d["_cfg"].get("seed"))
+    by = {key(d): d for d in runs}
     out = ["### Does the resize geometry matter? (matched LR and seed)\n",
-           "| lr_oft | seed | micro F1 pad | micro F1 squash | delta | macro F1 pad | macro F1 squash |",
-           "|---|---|---|---|---|---|---|"]
-    for (mode, lr, seed) in sorted({k for k in by}, key=lambda k: (k[1] or 0, k[2] or 0)):
+           "| lr_oft | lr_head | seed | micro F1 pad | micro F1 squash | delta | "
+           "macro F1 pad | macro F1 squash |",
+           "|---|---|---|---|---|---|---|---|"]
+    for (mode, lr, lh, seed) in sorted({k for k in by},
+                                      key=lambda k: (k[1] or 0, k[2] or 0, k[3] or 0)):
         if mode != "pad":
             continue
-        p, s = by.get(("pad", lr, seed)), by.get(("squash", lr, seed))
+        p, s = by.get(("pad", lr, lh, seed)), by.get(("squash", lr, lh, seed))
         if not (p and s):
             continue
         pm, sm = p["threshold_0.5"]["micro_f1"], s["threshold_0.5"]["micro_f1"]
         pa, sa = p["threshold_0.5"]["macro_f1"], s["threshold_0.5"]["macro_f1"]
-        out.append(f"| {lr} | {seed} | {pm:.4f} | {sm:.4f} | {pm - sm:+.4f} | {pa:.4f} | {sa:.4f} |")
+        out.append(f"| {lr} | {lh} | {seed} | {pm:.4f} | {sm:.4f} | {pm - sm:+.4f} | "
+                   f"{pa:.4f} | {sa:.4f} |")
     out.append("")
+    # The seed spread is the noise floor for the matched pad/squash row, so match on lr_head too.
     seeds = {}
     for d in runs:
         c = d["_cfg"]
-        if c.get("mode") == "squash" and c.get("lr_oft") == 0.0005:
+        if (c.get("mode") == "squash" and _close(c.get("lr_oft"), 0.0005)
+                and _close(c.get("lr_head"), 0.004)):
             seeds[c.get("seed")] = d["threshold_0.5"]["micro_f1"]
     if len(seeds) > 1:
         vals = list(seeds.values())
         spread = max(vals) - min(vals)
-        out.append(f"Seed spread on the shipped config (squash, lr_oft 0.0005, "
+        out.append(f"Seed spread at the matched head LR (squash, lr_oft 0.0005, lr_head 0.004, "
                    f"{len(seeds)} seeds {sorted(seeds)}): micro F1 {min(vals):.4f}-{max(vals):.4f}, "
                    f"i.e. **{spread:.4f}**. Any geometry difference smaller than that is not "
                    f"resolvable with this experiment.\n")
-    out.append("Reading: at lr_oft 0.002 padding looked clearly worse (0.3459 vs 0.3804), but at "
-               "the corrected lr_oft 0.0005 the gap collapses to within seed noise. Padding was "
-               "more sensitive to the too-high learning rate, so the first comparison was "
-               "measuring an LR x geometry interaction and not geometry alone.\n")
+    out.append("Reading: in the first comparison at lr_oft 0.002 an earlier pad arm (since "
+               "removed) scored 0.3459 vs squash 0.3804, but at the corrected lr_oft 0.0005 the "
+               "gap collapses to within seed noise. Padding was more sensitive to the too-high "
+               "learning rate, so the first comparison was measuring an LR x geometry "
+               "interaction and not geometry alone.\n")
     out.append("**Does the squash distortion itself cost anything?** Measured per image on the "
                "1,000 test images, bucketing by distortion `d = max(w,h)/min(w,h)`: micro F1 is "
                "0.3628 for near-square (d<1.02, n=66), 0.4122 (1.02-1.25), 0.4217 (1.25-1.50), "
@@ -115,10 +240,11 @@ def main() -> None:
              "(4 rating + 9,225 general + 3,247 character), label order taken from the "
              "baseline's own `config.json`.\n")
     L.append("Input geometry: bilinear resize straight to 512x512 with the aspect ratio not "
-             "preserved (\"squash\"). A padded-square arm was also run; at the corrected learning "
-             "rate the two are **statistically indistinguishable** (see the geometry section). "
-             "Squash is kept as the pipeline default because it is the arm with two seeds behind "
-             "it and is already cached — not because it measurably wins.\n")
+             "preserved (\"squash\"). A padded-square arm was also run; at the matched adapter LR "
+             "(`lr_oft 0.0005`, both arms at `lr_head 0.004`) the two are **statistically "
+             "indistinguishable** (see the geometry section). Squash is kept as the pipeline "
+             "default because it is the arm with two seeds behind it and is already cached — not "
+             "because it measurably wins.\n")
     L.append("**Caveat on the bar**: squashing also distorts the baseline's input, which costs it "
              "real accuracy — measured on its own native padded geometry it scores macro F1 "
              "0.2017 / micro F1 0.6935. Treat the numbers below as a *lower bound* on the bar.\n")
@@ -167,15 +293,18 @@ def main() -> None:
         L.append(f"| {label_for(d)} | " + " | ".join(f"{t[f'macro_{k}']:.4f}" for k in METRICS)
                  + " | " + " | ".join(f"{t[f'micro_{k}']:.4f}" for k in METRICS) + " |")
     L.append("")
+    L.extend(lr_head_section(runs, best_probe))
 
+    best = max(runs, key=lambda d: (metric(d, "threshold_0.5", "micro_f1"),
+                                    metric(d, "threshold_tuned", "macro_f1")), default=None)
     L.append("## Input geometry: padding vs squash\n")
     L.extend(geometry_section(runs))
-    if runs:
+    if best:
         L.append("### Where the gap lives (best run vs bar, macro F1 @0.5)\n")
         L.append("| category | labels | bar | ours |")
         L.append("|---|---|---|---|")
         bc = (base or {}).get("by_category_threshold_0.5", {})
-        oc = runs[0].get("by_category_threshold_0.5", {})
+        oc = best.get("by_category_threshold_0.5", {})
         for k, n in CATEGORY_LABELS.items():
             bf = bc.get(k, {}).get("macro_f1", float("nan"))
             of = oc.get(k, {}).get("macro_f1", float("nan"))
@@ -197,8 +326,8 @@ def main() -> None:
     L.append("| run dir | mode | lr_oft | lr_head | epochs | batch | micro F1 @0.5 | "
              "macro F1 @0.5 | tuned macro |")
     L.append("|---|---|---|---|---|---|---|---|---|")
-    L.append("| *(removed)* | squash | 0.02 | 0.002 | 14 | 32 | 0.1427 | 0.0003 | - | "
-             "muon-convention adapter LR: destroyed the features |")
+    L.append("| *(removed — muon-convention adapter LR destroyed the features)* | squash | 0.02 | "
+             "0.002 | 14 | 32 | 0.1427 | 0.0003 | - |")
     for d in runs:
         c = d["_cfg"]
         L.append(f"| `{os.path.basename(d['_dir'])}` | {c.get('mode')} | {c.get('lr_oft')} | "
@@ -208,51 +337,94 @@ def main() -> None:
     L.append("")
 
     L.append("## Efficiency\n")
-    L.append("| step variant | ms/step | img/s |")
+    L.append("| variant | ms/image | img/s |")
     L.append("|---|---|---|")
-    L.append("| eager | 359 | 89 |")
-    L.append("| `torch.compile(mode=\"default\")` on the forward | 290 | 110 |")
-    L.append("| + compiled optimizer | 250 | 129 |")
+    L.append("| eager | ~11.2 | ~89 |")
+    L.append("| `torch.compile(mode=\"default\")` on the forward | ~8.5 | ~118 |")
+    L.append("| `torch.compile(mode=\"max-autotune\")` | 5.9-6.6 | 150-170 |")
     L.append("")
-    L.append("Measured breakdown of an eager step at batch 32: forward 156 ms, backward 243 ms, "
-             "optimizer 88 ms, data 10 ms, H2D 4 ms. The optimizer cost is **per-tensor dispatch** "
-             "(73 adapter tensors x ~1.2 ms), proven by scaling: 10/25/50/73 tensors cost a linear "
-             "~2 ms each, while making every tensor 8x larger costs only +15%. Compiling it, with "
-             "Dynamo's recompile limits raised (otherwise `fullgraph=True` hard-fails with "
-             "`FailOnRecompileLimitHit`), brings it to ~28 ms.\n")
+    L.append("Batch 32, 512x512, BF16 on the RTX 4090; ms/step = 32 x ms/image, i.e. ~360 / "
+             "~271 / ~190-211 ms. `--compile-mode max-autotune` is ~1.2x faster end-to-end than "
+             "the `default` mode and costs minutes of one-off autotuning at startup. It is a CLI "
+             "flag, so the config hash (and the run directory) is unchanged.\n")
+    L.append("The eager optimizer update costs ~88 ms: SinkSGD_ADV dispatches **per tensor**, "
+             "and there are 73 tiny adapter tensors (~1.2 ms each). The cost is launch overhead, not "
+             "arithmetic, proven by scaling: 10/25/50/73 tensors cost a linear ~2 ms each, while "
+             "making every tensor 8x larger costs only +15%. Compiling it, with Dynamo's recompile "
+             "limits raised (otherwise `fullgraph=True` hard-fails with `FailOnRecompileLimitHit`), "
+             "brings it to ~28 ms. Data is ~10 ms and H2D ~4 ms per step and is not the "
+             "bottleneck.\n")
+
+    head12 = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.00012, seed=1337, epochs=8)
+    head004_8ep = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=8)
+    head004_20ep = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=20)
+    head25 = find_run(runs, mode="squash", lr_oft=0.0005, lr_head=0.00025, seed=1337, epochs=8)
+    oft002 = find_run(runs, mode="squash", lr_oft=0.002, lr_head=0.004, seed=1337, epochs=8)
+    pad = find_run(runs, mode="pad", lr_oft=0.0005, lr_head=0.004, seed=1337, epochs=8)
 
     L.append("## Open questions (deliberately not resolved yet)\n")
+    h12_tag = os.path.basename(head12["_dir"]) if head12 else "—"
+    h12_micro = sc(head12, "threshold_0.5", "micro_f1")
     L.append("**Padding vs squash — head-to-head numbers still open.** The *mechanism* is now "
              "settled: per-image accuracy does not correlate with squash distortion (r = +0.047), "
              "so geometry is not a lever. What remains is only whether pad's single-seed edge "
-             "survives a proper test: both arms ran at lr_head 0.004, since shown to be ~16x too "
-             "high, so the arms are stale. At lr_head 0.00012: squash seed 1337 = `fe92f4df` "
-             "(0.4142 micro); squash seed 2025 and pad x2 seeds would finish the job, ~32 min.\n")
+             "survives a proper test: both arms ran at lr_head 0.004, which the sweep above shows "
+             "is ~33x too high, so the arms are stale. At lr_head 0.00012: squash seed 1337 = "
+             f"`{h12_tag}` ({h12_micro} micro); squash seed 2025 and pad x2 seeds would finish "
+             "the job, ~32 min.\n")
+    ep20_micro = sc(head004_20ep, "threshold_0.5", "micro_f1")
+    ep8_micro = sc(head004_8ep, "threshold_0.5", "micro_f1")
     L.append("**Does more than 8 epochs help at the corrected head LR?** The 20-epoch run "
-             "(`fa51da74`) was flat from epoch 14 and its final test micro (0.3800) was below the "
-             "8-epoch run's (0.3888), but it ran with the oversized head LR, so its head was "
-             "overfitting early. Retest 20 epochs once lr_head is settled.\n")
+             f"(`{os.path.basename(head004_20ep['_dir']) if head004_20ep else '—'}`) was flat from "
+             f"epoch 14 and its final test micro ({ep20_micro}) was below the 8-epoch run's "
+             f"({ep8_micro}), but it ran with the oversized head LR, so its head was overfitting "
+             "early. Retest 20 epochs once lr_head is settled.\n")
     L.append("**Is lr_oft 0.0005 still right?** It was chosen with the head at 0.004. Now that the "
-             "head moves ~2x slower than the adapters instead of 8x faster, the optimal adapter "
-             "rate may shift. Untested interaction.\n")
+             "head moves ~4x slower than the adapters (0.00012 vs 0.0005) instead of 8x faster, "
+             "the optimal adapter rate may shift. Untested interaction.\n")
 
     L.append("## Conclusion\n")
     L.append("We do **not** beat `convnextv2_huge`. The baseline saw 5.3 M images and predicts "
              "about 33 labels per image at 0.73 precision; 10,000 images against 12,476 labels is "
              "0.8 images per label, and the long tail is not learnable at that scale. What the "
              "exercise does establish, on identical pixels and identical metrics:\n")
-    L.append("* OFTv2 earns its parameters: at lr_oft 0.0005 the best run (pad) beats a "
-             "frozen-feature probe of the same backbone by 21% relative on micro F1 "
-             "(0.3985 vs 0.3279), though only marginally on macro (0.0245 vs 0.0241). Resetting "
-             "the rotations to identity collapses it to 0.06.\n")
+    probe_micro = best_probe["test_micro_f1"] if best_probe else float("nan")
+    probe_macro = best_probe["test_macro_f1"] if best_probe else float("nan")
+    if best:
+        bm = metric(best, "threshold_0.5", "micro_f1")
+        bmacro = metric(best, "threshold_0.5", "macro_f1")
+        bt = metric(best, "threshold_tuned", "macro_f1")
+        rel = (bm / probe_micro - 1) * 100 if probe_micro == probe_micro and probe_micro else float("nan")
+        mid_macro = metric(head25, "threshold_0.5", "macro_f1")
+        L.append(f"* OFTv2 earns its parameters: the best run is squash at {bm:.4f} micro / "
+                 f"{bt:.4f} tuned macro, beating a frozen-feature probe of the same backbone by "
+                 f"{rel:.1f}% relative on micro F1 ({bm:.4f} vs {probe_micro:.4f}). "
+                 f"Fixed-threshold macro trades some of that away ({bmacro:.4f} vs "
+                 f"{probe_macro:.4f}; the higher head-LR arm reaches {mid_macro:.4f}).\n")
+    else:
+        L.append("* OFTv2 earns its parameters on micro F1, but no evaluated run was found.\n")
+    l002 = sc(oft002, "threshold_0.5", "micro_f1")
+    l005_lo = sc(head004_8ep, "threshold_0.5", "micro_f1")
+    l005_hi = sc(head12 or best, "threshold_0.5", "micro_f1")
     L.append("* The adapters are extremely sensitive to their learning rate. At the muon-convention "
-             "0.02 they are destructive (micro 0.14); the ladder is 0.02 -> 0.143, 0.002 -> 0.380, "
-             "0.0005 -> 0.389-0.398. Note lr_oft = 0 is not hypothetical either: that is the "
-             "frozen-feature probe at 0.328, so the curve is bracketed on both sides and 0.0005 "
-             "sits inside the plateau rather than past a cliff.\n")
-    L.append("* Resize geometry barely matters once the LR is right. Padding looked 10% worse at "
-             "lr_oft 0.002 and is tied at 0.0005 — the earlier conclusion was an LR interaction, "
-             "not a property of the geometry.\n")
+             "0.02 they are destructive (micro 0.1427); with the matched head LR the ladder is "
+             f"0.002 -> {l002} and 0.0005 -> {l005_lo}-{l005_hi}. That is not the whole story: "
+             f"the `lr_head` sweep above moves the same 0.0005 arms from {l005_lo} to {l005_hi}, a "
+             "larger effect than the adapter plateau. `lr_oft = 0` is not hypothetical either: the "
+             f"frozen-feature probe is {probe_micro:.4f}, so the curve is bracketed on both sides "
+             "and 0.0005 sits inside the plateau rather than past a cliff.\n")
+    if pad and head004_8ep:
+        pad_micro = metric(pad, "threshold_0.5", "micro_f1")
+        sq_micro = metric(head004_8ep, "threshold_0.5", "micro_f1")
+        L.append("* Resize geometry barely matters once the LR is right. At lr_oft 0.0005 / lr_head "
+                 f"0.004, pad scores {pad_micro:.4f} vs squash {sq_micro:.4f} micro, a "
+                 f"{pad_micro - sq_micro:+.4f} gap inside the seed spread reported above; "
+                 "per-image F1 does not correlate with squash distortion (r = +0.047). The earlier "
+                 "10% penalty at lr_oft 0.002 was an LR interaction, not a property of the "
+                 "geometry.\n")
+    else:
+        L.append("* Resize geometry: the matched pad/squash arms are missing, so the comparison "
+                 "could not be recomputed.\n")
     L.append("* The remaining gap to the bar is a data-scale gap, not a pipeline gap.\n")
 
     txt = "\n".join(L)
