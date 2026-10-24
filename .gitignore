@@ -6,6 +6,11 @@ runs/**/debugpics/
 runs/**/*.png
 # Keep provenance: runs/<sha8>/config.json, train_log.jsonl, eval_test.json
 
+# Scratch is working space: reference checkpoints and caches stay out of history
+scratch/**/*.pt
+scratch/**/*.npy
+scratch/**/*.pkl
+
 # Pause/stop flags are runtime state
 .PAUSE
 .PAUSE.txt
