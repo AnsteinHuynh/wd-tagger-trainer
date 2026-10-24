@@ -31,10 +31,20 @@ def eval_run(run_dir: str, split: str = "test") -> dict:
     cfg = TrainConfig.from_json(os.path.join(run_dir, "config.json"))
     space = load_label_space()
     model = DinoTagger(cfg, len(space)).cuda()
-    ck = torch.load(os.path.join(run_dir, "best_val.pt"), map_location="cuda", weights_only=False)
+    src = os.path.join(run_dir, "best_val.pt")
+    if not os.path.exists(src):
+        # A run whose validation was switched off never writes best_val.pt, and this used to
+        # crash a finished run at the very end. Score the last checkpoint instead.
+        cks = sorted(p for p in os.listdir(run_dir)
+                     if p.startswith("ckpt_step") and p.endswith(".pt"))
+        if not cks:
+            raise SystemExit(f"{run_dir} has neither best_val.pt nor ckpt_step*.pt to evaluate")
+        src = os.path.join(run_dir, cks[-1])
+    ck = torch.load(src, map_location="cuda", weights_only=False)
     model.load_adapter_state_dict(ck["adapter"])
     model.eval()
-    print(f"loaded best_val.pt (step {ck['step']}, val metrics {ck.get('metrics')})", flush=True)
+    print(f"loaded {os.path.basename(src)} (step {ck['step']}, "
+          f"val metrics {ck.get('metrics')})", flush=True)
 
     def fwd(x):
         return model(x)

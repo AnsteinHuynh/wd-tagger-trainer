@@ -1,14 +1,6 @@
-"""Multi-label metrics: Macro/Micro F1, MCC, Precision, Recall.
+"""Multi-label metrics: Macro/Micro F1, MCC, P, R.
 
-Conventions (applied identically to every model, ours and the baseline):
-
-* a label with no positive and no predicted positive contributes P=R=F1=MCC=0
-  (`0/0 -> 0`), so the macro averages are over the *entire* 12,476-label space;
-* micro totals pool TP/FP/FN over the whole (images x labels) matrix, and micro
-  MCC is the correlation over that flattened matrix;
-* `supported_*` variants average only over labels with at least one positive in
-  the split, which is reported alongside because with 1k images many labels are
-  simply absent.
+No positive + no predicted positive = 0 (`0/0 -> 0`), so macro averages all 12476 labels; micro pools TP/FP/FN over the images x labels matrix, MCC correlated over it; `supported_*` = labels with at least one positive, reported as many are absent at 1k images.
 """
 from __future__ import annotations
 
@@ -74,7 +66,7 @@ def sweep_thresholds(
 ) -> np.ndarray:
     """Per-label F1-optimal threshold on `probs`/`tgt` (both [n, L]).
 
-    Returns thresholds [L]. Labels with no positives fall back to 0.5.
+    Returns [L]; labels with no positives fall back to 0.5.
     """
     if grid is None:
         grid = np.round(np.arange(0.02, 0.99, 0.02), 3)

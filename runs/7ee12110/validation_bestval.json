@@ -1,0 +1,42 @@
+{
+  "checkpoint": "C:\\Users\\kerok\\apps\\wd-tagger-trainer\\runs\\7ee12110\\best_val.pt",
+  "run": "C:\\Users\\kerok\\apps\\wd-tagger-trainer\\runs\\7ee12110",
+  "batch_size": 96,
+  "seconds": 244.0,
+  "thresholds": [
+    0.4
+  ],
+  "subsets": {
+    "50000": {
+      "macro_f1": [
+        0.0410007677665651
+      ],
+      "macro_mcc": [
+        0.04406966432535114
+      ],
+      "macro_precision": [
+        0.06961577125641108
+      ],
+      "macro_recall": [
+        0.03728604894369122
+      ],
+      "micro_f1": [
+        0.41704242933847174
+      ],
+      "micro_mcc": [
+        0.4156318368295505
+      ],
+      "micro_precision": [
+        0.4064548936382849
+      ],
+      "micro_recall": [
+        0.42819629570449863
+      ],
+      "macro_f1_per_tag_best": 0.0410007677665651,
+      "n_supported_labels": 12454
+    }
+  },
+  "review": {
+    "note": "macro/micro F1/MCC/P/R at each threshold; macro_f1_per_tag_best tunes a threshold per tag"
+  }
+}

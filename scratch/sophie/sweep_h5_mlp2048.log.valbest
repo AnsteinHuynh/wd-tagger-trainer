@@ -1,0 +1,14 @@
+
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]
+Loading weights:  24%|██▎       | 50/211 [00:00<00:00, 444.09it/s]
+Loading weights:  48%|████▊     | 101/211 [00:00<00:00, 445.49it/s]
+Loading weights:  73%|███████▎  | 154/211 [00:00<00:00, 473.79it/s]
+Loading weights: 100%|██████████| 211/211 [00:00<00:00, 500.52it/s]
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\04aa7438\best_val.pt
+run C:\Users\kerok\apps\wd-tagger-trainer\runs\04aa7438  sizes [50000]  batch 96  thresholds 1 (0.40..0.40)
+scored 50,000 images in 246.9s (203 img/s)
+
+=== 50,000 images (12,454 supported labels) ===
+  at 0.40: macro F1 0.0234 MCC 0.0297 P 0.0747 R 0.0167 | micro F1 0.4216 MCC 0.4441 P 0.6209 R 0.3191
+
+wrote C:\Users\kerok\apps\wd-tagger-trainer\runs\04aa7438\validation_bestval.json

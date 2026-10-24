@@ -1,0 +1,46 @@
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba
+config sha8: 0337e2ba
+checkpoint selection metric: micro_f1 (--select-metric micro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+Loading weights:   0%|          | 0/415 [00:00<?, ?it/s]Loading weights:   4%|▍         | 16/415 [00:00<00:02, 157.41it/s]Loading weights:  12%|█▏        | 50/415 [00:00<00:01, 228.12it/s]Loading weights:  20%|██        | 84/415 [00:00<00:01, 249.61it/s]Loading weights:  28%|██▊       | 118/415 [00:00<00:01, 259.88it/s]Loading weights:  37%|███▋      | 152/415 [00:00<00:00, 263.53it/s]Loading weights:  45%|████▍     | 186/415 [00:00<00:00, 264.43it/s]Loading weights:  53%|█████▎    | 220/415 [00:00<00:00, 265.24it/s]Loading weights:  61%|██████    | 254/415 [00:00<00:00, 267.31it/s]Loading weights:  69%|██████▉   | 288/415 [00:01<00:00, 269.89it/s]Loading weights:  78%|███████▊  | 322/415 [00:01<00:00, 271.67it/s]Loading weights:  86%|████████▌ | 356/415 [00:01<00:00, 271.41it/s]Loading weights:  94%|█████████▍| 390/415 [00:01<00:00, 274.01it/s]Loading weights: 100%|██████████| 415/415 [00:01<00:00, 274.38it/s]
+params: OFT 14.09M, head 51.12M, unfrozen 0.00M in 0 block(s), backbone 317.2M, 145 OFT modules
+torch.compile(mode=default) ready in 1.7s
+no checkpoint found, starting fresh
+[stream] one pass over 480,000 images in 24,000 steps, batch 20, 8 decode threads
+debugpics: 20/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\debugpics
+debugpics: 40/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\debugpics
+debugpics: 60/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\debugpics
+debugpics: 80/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\debugpics
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\debugpics
+step 20/24000 loss nan lr 2.00e-04/4.80e-05 3 img/s vram 19.3GB
+step 40/24000 loss nan lr 4.00e-04/9.60e-05 33 img/s vram 19.3GB
+step 60/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 80/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+step 100/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 120/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+step 140/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 160/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+step 180/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 200/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\ckpt_step000200.pt
+step 220/24000 loss nan lr 5.00e-04/1.20e-04 31 img/s vram 19.3GB
+step 240/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 260/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+step 280/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 300/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 320/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 340/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 360/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 380/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 400/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\0337e2ba\ckpt_step000400.pt
+step 420/24000 loss nan lr 5.00e-04/1.20e-04 30 img/s vram 19.3GB
+step 440/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 460/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 480/24000 loss nan lr 5.00e-04/1.20e-04 35 img/s vram 19.3GB
+step 500/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 520/24000 loss nan lr 5.00e-04/1.20e-04 33 img/s vram 19.3GB
+step 540/24000 loss nan lr 5.00e-04/1.20e-04 34 img/s vram 19.3GB
+step 560/24000 loss nan lr 4.99e-04/1.20e-04 33 img/s vram 19.3GB

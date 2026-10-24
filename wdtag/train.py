@@ -1,11 +1,5 @@
-"""Training loop: DINOv3-B + OFTv2 + SinkSGD_ADV, BF16, resumable.
-
-Checkpoints land in runs/<sha8(config)>/ every 200 steps.  A `.PAUSE` file
-(also accepted as `.PAUSE.txt` / `.PUASE`) at the run-directory root or at the
-workspace root makes the trainer checkpoint and exit cleanly at the next step;
-re-running the same command resumes from the newest checkpoint and *continues
-the data stream* where it stopped rather than replaying the epoch from the
-beginning.
+"""Training loop: DINOv3 + OFTv2 + SinkSGD_ADV, BF16, resumable. `.PAUSE`/`.PUASE` at the run
+dir or workspace root exits at the next step; re-running resumes the stream.
 """
 from __future__ import annotations
 
@@ -22,7 +16,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Sampler
 
-from .cache import ensure_cache
+from .cache import CACHE_ROOT, ensure_cache
 from .config import CHECKPOINT_EVERY, RUNS_ROOT, TrainConfig
 from .data import CacheDataset, MultiHotCollator, label_priors, load_targets
 from .labels import load_label_space
@@ -33,26 +27,23 @@ WS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PAUSE_NAMES = (".PAUSE", ".PAUSE.txt", ".PUASE", ".PUASE.txt", "PAUSE")
 
-# Checkpoint selection: CLI-only, like --compile-mode/--val-every-steps, so it
-# never changes sha8.  `micro` is the default because macro-F1 on this label
-# space is dominated by thousands of rare/unseen tags and demonstrably picks
-# worse checkpoints (run fa51da74: macro selected step 2496 / micro 0.3800,
-# while micro actually peaked at 0.3938 on step 5304).
+# `micro` default: macro-F1 is dominated by rare tags (fa51da74: macro picked step 2496 where
+# micro was 0.3800; micro actually peaked 0.3938 at step 5304).
 SELECT_METRICS = {
     "micro": "micro_f1",
     "macro": "macro_f1",
     "supported_macro": "supported_macro_f1",
+    # The scoring protocol's metric: macro F1 at the fixed 0.40 threshold, not at the best
+    # threshold found inside the val subset. On the 1k subset those disagree enough to pick
+    # a different checkpoint, which is why the main run selects on this one.
+    "macro040": "macro_f1_at_0.40",
 }
 HEX8 = re.compile(r"^[0-9a-f]{8}$")
 
 
 def best_value(best: dict, metric: str) -> float:
-    """Best val score recorded for the chosen metric (-1.0 if unknown).
-
-    Checkpoints written before --select-metric existed only carry
-    `val_macro_f1`; that legacy key is still honoured for macro selection and
-    is kept in every new `best` dict for compatibility.
-    """
+    """Best val score for the chosen metric, -1.0 if unknown; legacy `val_macro_f1` kept for
+    macro."""
     key = f"val_{SELECT_METRICS[metric]}"
     if key in best:
         return float(best[key])
@@ -85,9 +76,27 @@ def epoch_perm(n: int, seed: int, epoch: int) -> list[int]:
     return torch.randperm(n, generator=g).tolist()
 
 
-def lr_at(step: int, total: int, base: float, warmup: int) -> float:
+def lr_at(step: int, total: int, base: float, warmup: int,
+          schedule: str = "cosine", decay_steps: int = 0) -> float:
+    """Cosine over the whole schedule by default.
+
+    "const" holds the peak after warmup and only anneals over the final `decay_steps`, which is
+    what makes a run extendable: raising `total` slides the decay window later instead of
+    stretching a cosine that has already spent its learning rate. Use it whenever the plan is
+    "keep training while it keeps climbing", then stop with a decay tail short enough that its
+    length does not depend on how long the run turned out to be.
+    """
     if warmup > 0 and step < warmup:
         return base * (step + 1) / warmup
+    if schedule == "const":
+        tail = max(0, int(decay_steps))
+        if tail <= 0:
+            return base
+        start = max(warmup, total - tail)
+        if step < start:
+            return base
+        progress = min(1.0, (step - start) / max(1, tail))
+        return base * (0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * progress)))
     progress = (step - warmup) / max(1, total - warmup)
     progress = min(1.0, max(0.0, progress))
     return base * (0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * progress)))
@@ -111,9 +120,74 @@ def evaluate(forward, model: DinoTagger, ds: CacheDataset, targets: np.ndarray,
     return metrics, probs
 
 
+class NestedValSet:
+    """The nested validation cache: a .npy memmap whose 1k/5k/10k/50k subsets are prefixes of
+    one array, so only a batch's pages are touched."""
+
+    def __init__(self, root: str, n_images: int, n_labels: int):
+        self.images = np.load(os.path.join(root, "images.npy"), mmap_mode="r")
+        lab = np.load(os.path.join(root, "labels.npz"))
+        self.indices = lab["indices"]
+        self.offsets = lab["offsets"]
+        self.n_labels = int(n_labels)
+        self.n = min(int(n_images), int(self.images.shape[0]))
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, i: int):
+        img = torch.from_numpy(np.ascontiguousarray(self.images[i]))
+        y = np.zeros(self.n_labels, dtype=np.float32)
+        y[self.indices[self.offsets[i]:self.offsets[i + 1]]] = 1.0
+        return img, torch.from_numpy(y)
+
+    def dense_targets(self) -> np.ndarray:
+        out = np.zeros((self.n, self.n_labels), dtype=np.float32)
+        for i in range(self.n):
+            lo, hi = int(self.offsets[i]), int(self.offsets[i + 1])
+            out[i, self.indices[lo:hi]] = 1.0
+        return out
+
+
+VAL_GRID = (0.25, 0.30, 0.40, 0.50)
+
+
+def threshold_summary(probs: np.ndarray, targets: np.ndarray, chunk: int = 4096) -> dict:
+    """Best global threshold by macro F1: our optimum sits nearer 0.30, where 0.50
+    understates macro ~30%. Row chunks per (threshold, label); whole 50k x 12k matrices
+    cost 16.8 s."""
+    n_labels = probs.shape[1]
+    T = len(VAL_GRID)
+    tp = np.zeros((T, n_labels), np.int64)
+    fp = np.zeros((T, n_labels), np.int64)
+    fn = np.zeros((T, n_labels), np.int64)
+    for s in range(0, probs.shape[0], chunk):
+        p = probs[s:s + chunk]
+        t = targets[s:s + chunk].astype(bool)
+        for ti, thr in enumerate(VAL_GRID):
+            pred = p >= thr
+            tp[ti] += (pred & t).sum(0)
+            fp[ti] += (pred & ~t).sum(0)
+            fn[ti] += (~pred & t).sum(0)
+
+    best = {"macro_f1_best": -1.0, "best_threshold": 0.5,
+            "micro_f1_at_best": -1.0, "macro_f1_at_0.40": -1.0}
+    for ti, thr in enumerate(VAL_GRID):
+        f1 = 2 * tp[ti] / np.maximum(2 * tp[ti] + fp[ti] + fn[ti], 1e-12)
+        macro = float(f1.mean())
+        TP, FP, FN = float(tp[ti].sum()), float(fp[ti].sum()), float(fn[ti].sum())
+        micro = 2 * TP / max(2 * TP + FP + FN, 1e-12)
+        if abs(thr - 0.40) < 1e-9:
+            best["macro_f1_at_0.40"] = macro
+        if macro > best["macro_f1_best"]:
+            best.update(macro_f1_best=macro, best_threshold=float(thr),
+                        micro_f1_at_best=micro)
+    return best
+
+
 def dump_debug_pictures(run_dir: str, ds: CacheDataset, indices: list[int],
                         manifest: list[dict], mode: str) -> None:
-    """Save exactly what the trainer fed the network, for traceability."""
+    """Exactly what the trainer fed the network."""
     from PIL import Image
 
     d = os.path.join(run_dir, "debugpics")
@@ -134,11 +208,7 @@ def dump_debug_pictures(run_dir: str, ds: CacheDataset, indices: list[int],
 
 def dump_stream_debug(run_dir: str, x, src: list[tuple[str, str]],
                       manifest: list[dict]) -> None:
-    """Save exactly what the trainer fed the network, when reading from the tars.
-
-    Same contract as `dump_debug_pictures`: the file name carries the sample key and
-    the tar it came from, so a picture can be traced back to its origin.
-    """
+    """Same contract as `dump_debug_pictures`, from the tars."""
     from PIL import Image
 
     d = os.path.join(run_dir, "debugpics")
@@ -154,6 +224,10 @@ def dump_stream_debug(run_dir: str, x, src: list[tuple[str, str]],
 
 def save_ckpt(path: str, model: DinoTagger, opt, step: int, epoch: int,
               step_in_epoch: int, best: dict, cfg: TrainConfig) -> None:
+    # Write beside the target and rename: a 250 MB torch.save interrupted by a reaped job, a
+    # power cut or a full disk leaves a truncated file, and because resume takes the highest
+    # step number it would then take the corrupt one and refuse to start at all.
+    tmp = path + ".tmp"
     torch.save(
         {
             "adapter": model.adapter_state_dict(),
@@ -164,25 +238,115 @@ def save_ckpt(path: str, model: DinoTagger, opt, step: int, epoch: int,
             "best": best,
             "config": cfg.to_dict(),
             "rng": {
-                # keep every RNG state on the CPU: cuda states are ByteTensors and
-                # map_location='cuda' would otherwise break set_state.
+                # RNG state on CPU: cuda states are ByteTensors that map_location='cuda'
+                # breaks set_state on.
                 "torch": torch.get_rng_state().cpu(),
                 "cuda": [s.cpu() for s in torch.cuda.get_rng_state_all()],
                 "numpy": np.random.get_state(),
                 "python": random.getstate(),
             },
         },
-        path,
+        tmp,
     )
+    os.replace(tmp, path)
+
+
+class StepHelper:
+    """Per-step concerns both loops share: pause, debug dumps, `log_every`, step checkpoints,
+    `--max-steps`, validation. `step` returns "go", "stop" (caller returns) or "complete"
+    (caller saves); a checkpoint stores batch + 1, a pause the unconsumed batch."""
+
+    def __init__(self, model, opt, cfg, a, run_dir, ds_train, best, val, step_fn,
+                 start_step: int, total_steps: int, stop_at: int = 0, accum: int = 1):
+        self.model, self.opt, self.cfg, self.a = model, opt, cfg, a
+        self.run_dir, self.ds_train = run_dir, ds_train
+        self.best, self.val, self.step_fn = best, val, step_fn
+        self.global_step, self.total_steps, self.stop_at = start_step, total_steps, stop_at
+        self.ckpt_every, self.t_step = max(1, a.ckpt_every_steps), time.time()
+        # images per optimiser step is batch * accum; the img/s line needs both
+        self.accum = max(1, int(accum))
+        # steps since the last log line: a val resets t_step mid-window, so the window's step
+        # count is not always log_every.
+        self.since_log = 0
+        mfile = os.path.join(run_dir, "debugpics", "manifest.json")
+        self.debug_manifest: list[dict] = []
+        if os.path.exists(mfile):
+            with open(mfile, encoding="utf-8") as f:
+                self.debug_manifest = json.load(f)
+        self.debug_done = len(self.debug_manifest)
+
+    def _save(self, epoch: int, batch: int) -> str:
+        p = os.path.join(self.run_dir, f"ckpt_step{self.global_step:06d}.pt")
+        save_ckpt(p, self.model, self.opt, self.global_step, epoch, batch, self.best(), self.cfg)
+        return p
+
+    def step(self, x, y, epoch=None, batch=0, src=None, indices=None) -> str:
+        # x and y are either one batch or a list of `grad_accum` micro-batches; the accumulated
+        # gradient is the mean of the micro-batch gradients, which for an elementwise-mean loss is
+        # the same number as one larger batch, not an approximation of it.
+        group = x if isinstance(x, (list, tuple)) else [x]
+        cursor = (0, 0) if epoch is None else (epoch, batch + 1)
+        if paused(self.run_dir):
+            # unconsumed, so a resume starts here
+            if self.global_step == 0:
+                # A .PAUSE left over from a previous stop would otherwise write a step-0
+                # checkpoint on every accidental relaunch, 250-300 MB each time.
+                print("PAUSE file detected before the first step -> exiting without saving",
+                      flush=True)
+                return "stop"
+            p = self._save(*((0, 0) if epoch is None else (epoch, batch)))
+            print(f"PAUSE file detected -> checkpointed {p} and exiting cleanly", flush=True)
+            return "stop"
+        if self.debug_done < 100:
+            need = min(100 - self.debug_done, len(src if src is not None else indices))
+            if src is not None:
+                # with accumulation the group holds several micro-batches and the first one may be
+                # smaller than `need` on its own
+                xcat = group[0] if len(group) == 1 else torch.cat(list(group))[:need]
+                dump_stream_debug(self.run_dir, xcat, src[:need], self.debug_manifest)
+            else:
+                dump_debug_pictures(self.run_dir, self.ds_train, indices[:need],
+                                    self.debug_manifest, self.cfg.mode)
+            self.debug_done += need
+            print(f"debugpics: {self.debug_done}/100 written to {self.run_dir}\\debugpics",
+                  flush=True)
+
+        loss = self.step_fn(group, y, self.global_step)
+        gs = self.global_step = self.global_step + 1
+        self.since_log += 1
+        if gs % self.cfg.log_every == 0:
+            dt, self.t_step = time.time() - self.t_step, time.time()
+            # count the steps this window actually contains, not log_every: a val can sit inside
+            ips = (self.since_log * self.cfg.batch_size * self.accum
+                   / max(dt, 1e-9))
+            self.since_log = 0
+            lrs = "/".join(f"{g['lr']:.2e}" for g in self.opt.param_groups)
+            ep = "" if epoch is None else f" ep {epoch}"
+            print(f"step {gs}/{self.total_steps}{ep} loss {loss.item():.4f} lr {lrs} "
+                  f"{ips:.0f} img/s vram {torch.cuda.max_memory_allocated()/1e9:.1f}GB",
+                  flush=True)
+
+        if gs % self.ckpt_every == 0:
+            print(f"checkpoint {self._save(*cursor)}", flush=True)
+        if self.a.max_steps and gs >= self.a.max_steps:
+            self._save(*cursor)
+            print("max-steps reached, stopped", flush=True)
+            return "stop"
+        if self.stop_at and gs >= self.stop_at:
+            # Fall through to the final save + test eval, so a finished schedule ends evaluated.
+            print(f"schedule complete at step {gs}/{self.stop_at}", flush=True)
+            return "complete"
+        if self.a.val_every_steps and gs % self.a.val_every_steps == 0:
+            self.val(gs, 0 if epoch is None else epoch)
+            self.t_step = time.time()   # else the next window's img/s includes the val
+            self.since_log = 0
+        return "go"
 
 
 def load_config(a: argparse.Namespace, ap: argparse.ArgumentParser) -> TrainConfig:
-    """Resolve --run/--config into a TrainConfig.
-
-    --run wins over --config.  The run's config.json carries `_sha8`; it must
-    resolve back to the same directory, otherwise a resume would silently start
-    a new run next to it.  An unpinned 8-hex run is pinned to its dirname here.
-    """
+    """Resolve --run/--config into a TrainConfig; --run wins. Its config.json `_sha8` must
+    resolve back here, else a resume silently starts a new run; an unpinned 8-hex run gets
+    pinned."""
     if a.run:
         run_path = os.path.normpath(a.run)
         cfg_path = os.path.join(run_path, "config.json")
@@ -209,6 +373,18 @@ def load_config(a: argparse.Namespace, ap: argparse.ArgumentParser) -> TrainConf
     ap.error("give --config FILE or --run DIR")
 
 
+def check_image_size(cfg, ap) -> None:
+    """The cache tree, the streamer's ring buffer and the validator all bind SIZE at import,
+    while the config carries the intended resolution. A mismatch would feed the wrong pixel
+    count to a checkpoint whose positional embedding assumes the other one, so stop here with
+    the exact command instead of failing several minutes into a resume."""
+    from .cache import SIZE
+
+    if cfg.image_size != SIZE:
+        ap.error(f"config says image_size {cfg.image_size} but the process bound SIZE {SIZE} "
+                 f"at import; rerun with WDTAG_SIZE={cfg.image_size} in the environment")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="",
@@ -218,7 +394,16 @@ def main() -> None:
                          "directory's config.json, whose _sha8 pin resolves back to it. "
                          "Takes precedence over --config.")
     ap.add_argument("--fresh", action="store_true", help="ignore existing checkpoints")
+    ap.add_argument("--reset-optimizer", action="store_true",
+                    help="restore weights but not optimizer state; needed when a fork "
+                         "adds a parameter group, since torch validates group layout")
     ap.add_argument("--max-steps", type=int, default=0)
+    ap.add_argument("--deterministic", action="store_true",
+                    help="force reproducible kernels so a resume can be diffed against an "
+                         "uninterrupted run. Disables flash and mem-efficient attention, whose "
+                         "backward pass scatters with atomics, and cudnn autotune. Measured: "
+                         "without it two identical runs differ in the gradients from step 1, so "
+                         "no resume can ever be bit-identical; with it the whole run reproduces.")
     ap.add_argument("--val-every-steps", type=int, default=0,
                     help="validate every N steps instead of once per epoch (0 = per epoch). "
                          "Deliberately a CLI flag, not a config field, so it does not change sha8.")
@@ -243,21 +428,48 @@ def main() -> None:
     ap.add_argument("--ckpt-every-steps", type=int, default=CHECKPOINT_EVERY,
                     help=f"checkpoint interval (default {CHECKPOINT_EVERY}). A full 5.3M pass is "
                          "~111k steps, where the default would write ~55 GB, so pass e.g. 5000.")
+    ap.add_argument("--ckpt-every-epochs", type=int, default=0,
+                    help="additionally checkpoint every N epochs (0 = never). The epoch-end save "
+                         "used to be unconditional, which on a 208-step epoch doubled the "
+                         "checkpoint count alongside --ckpt-every-steps: 49 x 639 MB = 30.6 GB per "
+                         "41-minute 5k-step arm, and the writes cost 5-15 s each (~8%% of wall "
+                         "time). Keep this 0 unless you specifically want epoch-aligned resume "
+                         "points.")
     a = ap.parse_args()
 
     cfg = load_config(a, ap)
+    check_image_size(cfg, ap)
+    # images per optimiser step = batch_size * accum. Kept as a local because total_steps, the
+    # resume skip and the loop grouping all need it and it must not drift between them.
+    accum = max(1, int(getattr(cfg, "grad_accum", 1) or 1))
+    if accum > 1:
+        print(f"[accum] {accum} micro-batches of {cfg.batch_size} per step "
+              f"(effective batch {cfg.batch_size * accum}): the same gradient as one larger "
+              f"batch for an elementwise-mean loss, at {cfg.batch_size} images of VRAM",
+              flush=True)
     torch.manual_seed(cfg.seed)
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
+    if getattr(a, "deterministic", False):
+        # Reproducibility, for verifying resume rather than for training: flash and
+        # mem-efficient attention backwards scatter with atomics, so two identical runs diverge
+        # in the gradients from the very first step and no comparison can be made. The math
+        # backend is slower and exact.
+        torch.use_deterministic_algorithms(True, warn_only=False)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        print("[deterministic] math attention, cudnn deterministic, autotune off", flush=True)
     device = "cuda"
 
     space = load_label_space()
     n_labels = len(space)
     run_dir = cfg.run_dir()
     if not getattr(cfg, "_sha8_pin", None):
-        # Freeze this brand-new run's identity in its config.json.  Without the
-        # pin, any later added/removed dataclass field would silently re-key it
-        # and a resume would start a new directory instead of continuing.
+        # Freeze this run's identity: unfixed, a later field change re-keys it and a resume
+        # starts a new dir.
         cfg._sha8_pin = cfg.sha8()
     log_path = os.path.join(run_dir, "train_log.jsonl")
     with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
@@ -271,56 +483,78 @@ def main() -> None:
     ensure_cache("test", mode=cfg.mode)
 
     ds_train = CacheDataset("train", cfg.mode, n_labels)
-    ds_val = CacheDataset("valid", cfg.mode, n_labels)
-    val_targets = load_targets("valid", cfg.mode, n_labels)
+    # 50k nested memmap ~3 min; the 1k set's ~0.37 macro ceiling cannot rank models
+    # differing in macro.
+    nested_root = os.path.join(CACHE_ROOT, "valid_nested")
+    val_want = int(getattr(cfg, "val_images", 0) or 0)
+    if val_want > 1000 and os.path.exists(os.path.join(nested_root, "images.npy")):
+        ds_val = NestedValSet(nested_root, val_want, n_labels)
+        val_targets = ds_val.dense_targets()
+        print(f"[val] nested validation cache: {len(ds_val):,} images from {nested_root}",
+              flush=True)
+    else:
+        ds_val = CacheDataset("valid", cfg.mode, n_labels)
+        val_targets = load_targets("valid", cfg.mode, n_labels)
 
     model = DinoTagger(cfg, n_labels).to(device)
     priors = label_priors("train", cfg.mode, n_labels)
     model.init_head_bias(priors)
     counts = model.count_params()
     print(f"params: OFT {counts['oft']/1e6:.2f}M, head {counts['head']/1e6:.2f}M, "
-          f"frozen backbone {counts['backbone']/1e6:.1f}M, {model.n_oft} OFT modules", flush=True)
+          f"unfrozen {counts['blocks']/1e6:.2f}M in {model.n_unfrozen} block(s), "
+          f"backbone {counts['backbone']/1e6:.1f}M, {model.n_oft} OFT modules", flush=True)
 
-    # torch.compile is worth ~1.6x here; mode="max-autotune" was measured at a
-    # further 1.4x over "default" on a 4090 (Inductor autotunes the GEMM/bmm
-    # kernels, which dominate this graph). Overridable via --compile-mode.
+
+    # torch.compile ~1.6x; Inductor autotunes the GEMM/bmm kernels this graph is made of.
+    # The log states the mode outright: default, max-autotune or eager. "eager" is a decision
+    # (compile_model=false) or a failure, and the two are distinguished so a slow run can be
+    # diagnosed from its own log rather than from the config's intent.
     forward = model
     _cmode = a.compile_mode or "default"
+    _opt = "compiled" if cfg.compiled_optimizer else "eager"
     if cfg.compile_model:
         try:
             t0 = time.time()
             forward = torch.compile(model, mode=_cmode)
-            print(f"torch.compile(mode={_cmode}) ready in {time.time()-t0:.1f}s", flush=True)
+            print(f"[compile] model={_cmode} optimizer={_opt}"
+                  f"{'' if a.compile_mode else ' (default mode; --compile-mode max-autotune for a long run)'}"
+                  f", ready in {time.time()-t0:.1f}s", flush=True)
         except Exception as e:  # never let a compile problem kill a run
-            print(f"torch.compile unavailable ({type(e).__name__}: {e}); using eager", flush=True)
+            print(f"[compile] model=eager (torch.compile FAILED: {type(e).__name__}: {e}) "
+                  f"optimizer={_opt}", flush=True)
             forward = model
+    else:
+        print(f"[compile] model=eager (compile_model=false) optimizer={_opt}", flush=True)
 
-    oft_params, head_params = model.trainable_parameters()
+    oft_params, head_params, block_params = model.trainable_parameters()
     from adv_optm import SinkSGD_adv
 
     if cfg.compiled_optimizer:
-        # The per-tensor update is ~2 ms of Python/dispatch per adapter tensor
-        # (73 of them => ~88 ms/step, flat in element count). Compiling it costs
-        # ~6 s once and brings the step to ~28 ms. fullgraph=True hard-fails on
-        # Dynamo's default recompile limit, so raise it before touching anything.
+        # ~2 ms of Python/dispatch per adapter tensor (73 => ~88 ms/step, flat in element
+        # count); compiled once (~6 s) => ~28 ms. fullgraph=True trips the recompile limit:
+        # raise it first.
         torch._dynamo.config.cache_size_limit = 1_000_000
         torch._dynamo.config.recompile_limit = 1_000_000
         torch._dynamo.config.accumulated_recompile_limit = 1_000_000
         torch._dynamo.config.force_parameter_static_shapes = False
 
     if cfg.freeze_oft:
-        # stage 1: adapters stay at identity (Cayley(0) = I, so the rotation is a
-        # numerical no-op) and only the head learns. Dropping them from the
-        # optimizer also removes 73 per-tensor updates from every step.
+        # Adapters at identity (Cayley(0) = I), out of the optimizer: -73 updates/step.
+        # Unfrozen blocks = arm C (no adapter, linear head); omitting block_params once
+        # trained the head only.
         for p in oft_params:
             p.requires_grad_(False)
-        groups = [{"params": head_params, "lr": cfg.lr_head}]
-        print("freeze_oft: adapters held at identity, training the head only", flush=True)
+        groups = []
+        if block_params:
+            groups.append({"params": block_params, "lr": cfg.lr_unfreeze})
+        groups.append({"params": head_params, "lr": cfg.lr_head})
+        print(f"freeze_oft: adapters held at identity; training "
+              f"{'unfrozen blocks + ' if block_params else ''}head", flush=True)
     else:
-        groups = [
-            {"params": oft_params, "lr": cfg.lr_oft},
-            {"params": head_params, "lr": cfg.lr_head},
-        ]
+        groups = [{"params": oft_params, "lr": cfg.lr_oft}]
+        if block_params:
+            groups.append({"params": block_params, "lr": cfg.lr_unfreeze})
+        groups.append({"params": head_params, "lr": cfg.lr_head})
 
     opt = SinkSGD_adv(
         groups,
@@ -332,22 +566,69 @@ def main() -> None:
         compiled_optimizer=cfg.compiled_optimizer,
     )
 
-    ckpt_every = max(1, a.ckpt_every_steps)
+
+    from .losses import make_loss, class_balanced_weights
+
+    loss_name = getattr(cfg, "loss", "bce") or "bce"
+    _loss_fn = make_loss(loss_name)
+    _class_weight = _ntr_bias = _pos_weight = None
+    if loss_name != "bce":
+        from .data import label_priors as _priors
+        from .losses import ntr_bias_from_prior
+
+        _pri = torch.as_tensor(_priors("train", cfg.mode, n_labels),
+                               dtype=torch.float32, device=device)
+        _cnt = _pri * 10000.0
+        if loss_name == "cb_ntr":
+            _class_weight = class_balanced_weights(_cnt, beta=cfg.cb_beta,
+                                                   normalize="pos_mass")
+            _ntr_bias = ntr_bias_from_prior(_pri, kappa=cfg.ntr_kappa)
+            print(f"loss cb_ntr: weight {float(_class_weight.min()):.3f}.."
+                  f"{float(_class_weight.max()):.3f} (beta {cfg.cb_beta}, pos_mass), "
+                  f"lambda {cfg.ntr_lambda}, kappa {cfg.ntr_kappa}", flush=True)
+        elif loss_name == "bce_pos_weight":
+            # pos_weight needs IMAGE count, not positive count; set once len(ds_train)
+            # is known.
+            _pos_weight = None
+        else:
+            print(f"loss {loss_name}: gamma_pos 0.0, gamma_neg {cfg.loss_gamma}, clip 0.05, "
+                  f"detach_focal", flush=True)
+
+    # BUG FIXED 2026-10-22: `loss_gamma` NEVER passed, so ASL ran gamma_neg=4.0 against configs
+    # saying 2.0; the phase-3 gamma sweep (g1.0/g3.0/g4.0) would have been 3 identical arms.
+    _loss_kwargs = {}
+    if loss_name in ("asl", "asl_ntr"):
+        _loss_kwargs["gamma_neg"] = float(cfg.loss_gamma)
+    if loss_name == "asl_ntr":
+        _loss_kwargs["ntr_lambda"] = float(cfg.ntr_lambda)
+
     use_stream = a.stream or bool(getattr(cfg, "stream", False))
     if use_stream:
         from .stream import KNOWN_TOTAL
 
         stream_images = (a.stream_images or getattr(cfg, "stream_images", 0)
                             or KNOWN_TOTAL["train"])
-        # One pass, so there is no epoch: total_steps is the whole pass.
-        total_steps = -(-stream_images // cfg.batch_size)
+        # one pass, no epoch: total_steps is the whole pass, and one step now spends
+        # batch_size * grad_accum images.
+        total_steps = -(-stream_images // (cfg.batch_size * accum))
         steps_per_epoch = total_steps
     else:
         stream_images = 0
         steps_per_epoch = len(ds_train) // cfg.batch_size
         total_steps = steps_per_epoch * cfg.epochs
+        if accum > 1:
+            print("[accum] ignored on the cached-image path, which has its own epoch and batch "
+                  "loop; only the tar stream accumulates", flush=True)
 
-    # ---------------------------------------------------------------- resume
+    # pos_weight_i = ((N - n_i)/n_i)**0.5, N = images; the total-positive form inflates ~6x
+    # and gave a one-example label 568x.
+    if loss_name == "bce_pos_weight" and _pos_weight is None:
+        _n_img = float(stream_images or len(ds_train))
+        _pos_weight = ((_n_img - _cnt) / _cnt.clamp_min(1.0)).clamp_min(0.0).sqrt()
+        print(f"loss bce_pos_weight: n_images {_n_img:.0f}, pos_weight "
+              f"{float(_pos_weight.min()):.3f}..{float(_pos_weight.max()):.3f}", flush=True)
+
+
     start_epoch, start_step_in_epoch, global_step = 0, 0, 0
     best = {"val_macro_f1": -1.0, "step": -1}
     if not a.fresh:
@@ -356,10 +637,28 @@ def main() -> None:
             key=lambda p: int(p.split("step")[1].split(".")[0]),
         )
         if ckpts:
-            path = os.path.join(run_dir, ckpts[-1])
-            ck = torch.load(path, map_location=device, weights_only=False)
-            model.load_adapter_state_dict(ck["adapter"])
-            opt.load_state_dict(ck["optimizer"])
+            # Newest first, but never die on one bad file: a truncated checkpoint used to make
+            # a run unresumable even with three good ones sitting beside it.
+            ck = None
+            for name in reversed(ckpts):
+                path = os.path.join(run_dir, name)
+                try:
+                    ck = torch.load(path, map_location=device, weights_only=False)
+                    break
+                except Exception as e:  # noqa: BLE001 - any load failure means "try older"
+                    print(f"[resume] {name} unreadable ({type(e).__name__}: {e}); "
+                          f"falling back to an older checkpoint", flush=True)
+                    ck = None
+            if ck is None:
+                raise SystemExit(f"no readable checkpoint in {run_dir}")
+            model.load_adapter_state_dict(
+                ck["adapter"], strict=not getattr(a, "reset_optimizer", False))
+            if getattr(a, "reset_optimizer", False):
+                # A parameter group changes the group count and torch validates layout, so
+                # state_dict cannot load; momentum from zero suits a new phase.
+                print("[resume] --reset-optimizer: skipping optimizer state restore", flush=True)
+            else:
+                opt.load_state_dict(ck["optimizer"])
             global_step = ck["step"]
             start_epoch = ck["epoch"]
             start_step_in_epoch = ck["step_in_epoch"]
@@ -376,20 +675,26 @@ def main() -> None:
         else:
             print("no checkpoint found, starting fresh", flush=True)
 
-    # staged training: warm-start the adapter/head from another run's checkpoint
-    # (e.g. stage 1 trains the head with the adapters frozen at identity, stage 2
-    # starts from it with a gentle lr_oft). Optimizer state and schedule are NOT
-    # inherited -- stage 2 is a new run with its own warmup and cosine.
+    # staged: warm-start from another run (stage 1 head vs identity adapters, stage 2 gentle
+    # lr_oft); optimizer state and schedule NOT inherited.
     init_from = a.init_from or getattr(cfg, "init_from", "")
     if init_from:
         src = init_from
-        cand = os.path.join(src, "best_val.pt")
+        # A directory means "its best_val.pt", which is usually right but not always: a run whose
+        # last checkpoint is the annealed one and whose best_val sits mid-anneal should be started
+        # from the last one. Naming the file explicitly is the escape hatch.
+        if src.endswith(".pt"):
+            cand = src
+        else:
+            cand = os.path.join(src, "best_val.pt")
+            if not os.path.exists(cand):
+                srcs = sorted(p for p in os.listdir(src)
+                              if p.startswith("ckpt_step") and p.endswith(".pt"))
+                if not srcs:
+                    raise SystemExit(f"--init-from {src} has no best_val.pt or ckpt_step*.pt")
+                cand = os.path.join(src, srcs[-1])
         if not os.path.exists(cand):
-            srcs = sorted(p for p in os.listdir(src)
-                          if p.startswith("ckpt_step") and p.endswith(".pt"))
-            if not srcs:
-                raise SystemExit(f"--init-from {src} has no best_val.pt or ckpt_step*.pt")
-            cand = os.path.join(src, srcs[-1])
+            raise SystemExit(f"--init-from {cand} does not exist")
         ick = torch.load(cand, map_location=device, weights_only=False)
         model.load_adapter_state_dict(ick["adapter"])
         print(f"warm-started adapter+head from {cand} (step {ick['step']}, "
@@ -398,37 +703,37 @@ def main() -> None:
 
     coll = MultiHotCollator(n_labels)
     t_start = time.time()
-    t_step = time.time()
-    debug_manifest: list[dict] = []
-    _mfile = os.path.join(run_dir, "debugpics", "manifest.json")
-    if os.path.exists(_mfile):
-        with open(_mfile, encoding="utf-8") as f:
-            debug_manifest = json.load(f)
-    debug_done = len(debug_manifest)
 
     def run_val(step: int, ep: int) -> dict:
-        """Validate, log, and keep best_val.pt. Callable mid-epoch or at epoch end."""
+        """Validate, log, keep best_val.pt; mid-epoch or epoch end."""
         nonlocal best
         t0 = time.time()
-        metrics, _ = evaluate(forward, model, ds_val, val_targets, cfg.batch_size, device)
-        rec = {"step": step, "epoch": ep, **metrics, "val_seconds": round(time.time() - t0, 1)}
+        metrics, probs = evaluate(forward, model, ds_val, val_targets, cfg.batch_size, device)
+        extra = threshold_summary(probs, val_targets)
+        rec = {"step": step, "epoch": ep, **metrics, **extra,
+               "val_seconds": round(time.time() - t0, 1), "val_images": len(ds_val)}
         sel_key = SELECT_METRICS[a.select_metric]
         print(f"VAL step {step} (ep {ep}): macro_f1 {metrics['macro_f1']:.4f} "
               f"macro_mcc {metrics['macro_mcc']:.4f} micro_f1 {metrics['micro_f1']:.4f} "
               f"micro_mcc {metrics['micro_mcc']:.4f} "
               f"(supported_macro_f1 {metrics.get('supported_macro_f1', float('nan')):.4f}) "
-              f"| best by {sel_key}", flush=True)
+              f"| n={len(ds_val)} best_thr {extra['best_threshold']:.2f} "
+              f"macro@bestthr {extra['macro_f1_best']:.4f} "
+              f"macro@0.40 {extra['macro_f1_at_0.40']:.4f} "
+              f"| best by {sel_key} in {rec['val_seconds']:.1f}s", flush=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
-        raw = metrics.get(sel_key)
+        # threshold_summary's metrics live in `extra`, not `metrics`: read the merged record,
+        # or a threshold-based metric resolves to NaN and nothing is ever selected.
+        raw = rec.get(sel_key)
         score = float(raw) if raw is not None else float("nan")
         if math.isfinite(score) and score > best_value(best, a.select_metric):
             best = {
-                # legacy key kept for old checkpoints/readers: macro selection
-                # still reads it from checkpoints written before this change
+                # legacy key: macro selection from pre---select-metric ckpts.
                 "val_macro_f1": metrics["macro_f1"],
                 "val_micro_f1": metrics["micro_f1"],
                 "val_supported_macro_f1": metrics.get("supported_macro_f1", -1.0),
+                "val_macro_f1_at_0.40": extra["macro_f1_at_0.40"],
                 "select_metric": a.select_metric,
                 "step": step,
                 "epoch": ep,
@@ -440,83 +745,119 @@ def main() -> None:
                   f"(selection metric: {a.select_metric}) -> best_val.pt", flush=True)
         return metrics
 
-    def step_once(x, y):
-        """One optimiser step. Shared by the cached and the streamed training loops so
-        the two cannot drift apart."""
-        bases = (cfg.lr_head,) if cfg.freeze_oft else (cfg.lr_oft, cfg.lr_head)
+    def step_once(x, y, step):
+        """One optimiser step for both loops."""
+        # mirror the param-group order above, incl. freeze_oft + blocks.
+        if cfg.freeze_oft:
+            bases = ((cfg.lr_unfreeze, cfg.lr_head) if block_params
+                     else (cfg.lr_head,))
+        else:
+            bases = ((cfg.lr_oft, cfg.lr_unfreeze, cfg.lr_head) if block_params
+                     else (cfg.lr_oft, cfg.lr_head))
         for gi, base in enumerate(bases):
-            opt.param_groups[gi]["lr"] = lr_at(global_step, total_steps, base,
-                                               cfg.warmup_steps)
-        x = x.to(device, non_blocking=True)
-        y = y.to(device, non_blocking=True)
-        logits = forward(x)
-        loss = F.binary_cross_entropy_with_logits(logits.float(), y)
+            opt.param_groups[gi]["lr"] = lr_at(step, total_steps, base,
+                                               cfg.warmup_steps, cfg.lr_schedule,
+                                               cfg.decay_steps)
+        acc = max(1, int(getattr(cfg, "grad_accum", 1) or 1))
+        micro = x if isinstance(x, (list, tuple)) else [x]
+        ys = y if isinstance(y, (list, tuple)) else [y]
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        total = None
+        # Backward per micro-batch on loss/acc, then one optimiser step: for a loss that averages
+        # over elements this is the same gradient as the full batch, because the mean of the
+        # micro-batch means is the mean. The dropout draw and the cast differ from a true large
+        # batch, so equal is up to floating point and RNG, not bitwise.
+        for xi, yi in zip(micro, ys):
+            xi = xi.to(device, non_blocking=True)
+            yi = yi.to(device, non_blocking=True)
+            logits = forward(xi)
+            if loss_name == "cb_ntr":
+                loss = _loss_fn(logits.float(), yi, ntr_bias=_ntr_bias,
+                                class_weight=_class_weight, gamma=cfg.loss_gamma,
+                                ntr_lambda=cfg.ntr_lambda)
+            elif loss_name == "bce_pos_weight":
+                loss = _loss_fn(logits.float(), yi, pos_weight=_pos_weight)
+            elif loss_name != "bce":
+                loss = _loss_fn(logits.float(), yi, **_loss_kwargs)
+            else:
+                loss = F.binary_cross_entropy_with_logits(logits.float(), yi)
+            (loss / acc).backward()
+            total = loss.detach() if total is None else total + loss.detach()
+        if total is None:
+            raise RuntimeError("no micro-batches reached the step function")
         if cfg.grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(
                 [p for g in opt.param_groups for p in g["params"]], cfg.grad_clip)
         opt.step()
-        return loss
+        return total / max(1, len(micro))
+
+    h = StepHelper(model, opt, cfg, a, run_dir, ds_train, lambda: best, run_val,
+                   step_once, global_step, total_steps,
+                   stop_at=total_steps if use_stream else 0, accum=accum)
 
     if use_stream:
-        # ------------------------------------------------------------ streamed pass
+
         from .stream import TarStream
 
-        skip = global_step * cfg.batch_size  # exact: every batch is cfg.batch_size
+        skip = global_step * cfg.batch_size * accum  # exact: every step spends the same images
         print(f"[stream] one pass over {stream_images:,} images in {total_steps:,} steps, "
-              f"batch {cfg.batch_size}, {a.stream_workers} decode threads"
+              f"batch {cfg.batch_size}"
+              + (f" x {accum} accumulated" if accum > 1 else "")
+              + f", {a.stream_workers} decode threads"
               + (f", resuming by skipping {skip:,} samples" if skip else ""), flush=True)
-        sp = TarStream("train", seed=cfg.seed, pass_index=0, batch_size=cfg.batch_size,
-                       n_labels=n_labels, workers=a.stream_workers, prefetch=4,
-                       skip=skip, max_samples=stream_images,
-                       log=lambda m: print(m, flush=True))
+        # stream_images may span traversals (2x corpus = warm restart): chain pass_index
+        # 0,1,2,..; 0 capped training at one epoch. Order is pure f(seed, pass_index).
+        corpus = KNOWN_TOTAL["train"]
+        want_passes = max(1, -(-stream_images // corpus))
+        # absolute samples consumed can exceed one corpus; split into (pass, offset) to
+        # resume mid-epoch-N.
+        start_pass = skip // corpus
+        next_skip = skip % corpus
+        if start_pass >= want_passes:
+            print(f"[stream] checkpoint is at pass {start_pass} but stream_images only "
+                  f"covers {want_passes} pass(es); raise stream_images to continue",
+                  flush=True)
+
+        def _passes():
+            for p in range(start_pass, want_passes):
+                sp = TarStream("train", seed=cfg.seed, pass_index=p,
+                               batch_size=cfg.batch_size, n_labels=n_labels,
+                               workers=a.stream_workers, prefetch=4, hold=accum,
+                               skip=next_skip if p == start_pass else 0,
+                               max_samples=int(min(corpus, stream_images - p * corpus)),
+                               log=lambda m: print(m, flush=True))
+                yield from sp.batches()
+
         model.train()
-        t_step = time.time()
-        for x, y, consumed, src in sp.batches():
-            if paused(run_dir):
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                # this batch has NOT been consumed, so a resume starts at it
-                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
-                print(f"PAUSE file detected -> checkpointed {p} and exiting cleanly",
-                      flush=True)
+        group_x, group_y, group_src = [], [], []
+        for x, y, consumed, src in _passes():
+            group_x.append(x)
+            group_y.append(y)
+            group_src.extend(src)
+            if len(group_x) < h.accum:
+                continue
+            r = h.step(group_x, group_y, src=group_src)
+            group_x, group_y, group_src = [], [], []
+            if r == "stop":
                 return
-            if debug_done < 100:
-                need = min(100 - debug_done, len(src))
-                dump_stream_debug(run_dir, x[:need], src[:need], debug_manifest)
-                debug_done += need
-                print(f"debugpics: {debug_done}/100 written to {run_dir}\\debugpics",
+            if r == "complete":
+                break
+        if group_x:
+            # A stream whose length is not a whole number of optimiser steps still spends its
+            # tail. That last step consumes fewer images than batch*accum, so the sample cursor a
+            # later resume infers from global_step is slightly ahead of the truth; it only happens
+            # once the stream is exhausted, where a resume is refused anyway.
+            short = cfg.batch_size * (accum - len(group_x))
+            if short:
+                print(f"[accum] last step is short by {short} images (stream exhausted)",
                       flush=True)
-
-            loss = step_once(x, y)
-            global_step += 1
-
-            if global_step % cfg.log_every == 0:
-                dt = time.time() - t_step
-                t_step = time.time()
-                ips = cfg.log_every * cfg.batch_size / max(dt, 1e-9)
-                _lrs = "/".join(f"{g['lr']:.2e}" for g in opt.param_groups)
-                print(f"step {global_step}/{total_steps} loss {loss.item():.4f} lr {_lrs} "
-                      f"{ips:.0f} img/s vram {torch.cuda.max_memory_allocated()/1e9:.1f}GB",
-                      flush=True)
-
-            if global_step % ckpt_every == 0:
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
-                print(f"checkpoint {p}", flush=True)
-
-            if a.max_steps and global_step >= a.max_steps:
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
-                print("max-steps reached, stopped", flush=True)
+            r = h.step(group_x, group_y, src=group_src)
+            if r == "stop":
                 return
-
-            if a.val_every_steps and global_step % a.val_every_steps == 0:
-                run_val(global_step, 0)
 
         print(f"training done in {(time.time()-t_start)/60:.1f} min, best {best}", flush=True)
-        p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-        save_ckpt(p, model, opt, global_step, 0, 0, best, cfg)
+        p = os.path.join(run_dir, f"ckpt_step{h.global_step:06d}.pt")
+        save_ckpt(p, model, opt, h.global_step, 0, 0, best, cfg)
         from .evaluate import eval_run
         eval_run(run_dir, "test")
         return
@@ -538,62 +879,36 @@ def main() -> None:
         model.train()
         for bi, (x, y) in enumerate(loader):
             step_in_epoch = skip_batches + bi
-            if debug_done < 100:
-                need = min(100 - debug_done, len(batches[bi]))
-                dump_debug_pictures(run_dir, ds_train, batches[bi][:need],
-                                    debug_manifest, cfg.mode)
-                debug_done += need
-                print(f"debugpics: {debug_done}/100 written to {run_dir}\\debugpics", flush=True)
-            if paused(run_dir):
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                # this batch has NOT been consumed yet, so resume at it
-                save_ckpt(p, model, opt, global_step, epoch, step_in_epoch, best, cfg)
-                print(f"PAUSE file detected -> checkpointed {p} and exiting cleanly", flush=True)
+            if h.step(x, y, epoch=epoch, batch=step_in_epoch,
+                      indices=batches[bi]) == "stop":
                 return
 
-            loss = step_once(x, y)
-            global_step += 1
 
-            if global_step % cfg.log_every == 0:
-                dt = time.time() - t_step
-                t_step = time.time()
-                ips = cfg.log_every * cfg.batch_size / max(dt, 1e-9)
-                _lrs = "/".join(f"{g['lr']:.2e}" for g in opt.param_groups)
-                print(f"step {global_step}/{total_steps} ep {epoch} loss {loss.item():.4f} "
-                      f"lr {_lrs} "
-                      f"{ips:.0f} img/s vram {torch.cuda.max_memory_allocated()/1e9:.1f}GB",
-                      flush=True)
-
-            if global_step % ckpt_every == 0:
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                # batch `step_in_epoch` is done -> the next one to run is +1
-                save_ckpt(p, model, opt, global_step, epoch, step_in_epoch + 1, best, cfg)
-                print(f"checkpoint {p}", flush=True)
-
-            if a.max_steps and global_step >= a.max_steps:
-                p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-                save_ckpt(p, model, opt, global_step, epoch, step_in_epoch + 1, best, cfg)
-                print("max-steps reached, stopped", flush=True)
-                return
-
-            if a.val_every_steps and global_step % a.val_every_steps == 0:
-                run_val(global_step, epoch)
-
-        # ------------------------------------------------------------- valid
         del loader  # reap worker processes before measuring memory-driven work
         if not a.val_every_steps:
-            run_val(global_step, epoch)
-        p = os.path.join(run_dir, f"ckpt_step{global_step:06d}.pt")
-        save_ckpt(p, model, opt, global_step, epoch + 1, 0, best, cfg)
+            run_val(h.global_step, epoch)
+            h.t_step = time.time()   # else the next window's img/s includes the val
+            h.since_log = 0
+        # OPT-IN: unconditional saves on a 208-step epoch interleaved with the 200-step
+        # interval wrote 639 MB ~every 100 steps (30.6 GB per 5k arm).
+        if a.ckpt_every_epochs and (epoch + 1) % a.ckpt_every_epochs == 0:
+            p = os.path.join(run_dir, f"ckpt_step{h.global_step:06d}.pt")
+            save_ckpt(p, model, opt, h.global_step, epoch + 1, 0, best, cfg)
 
     print(f"training done in {(time.time()-t_start)/60:.1f} min, best {best}", flush=True)
-    # final evaluation on the test cache, as required
+    # The streamed branch always saved a final ckpt here, the cached branch did not -- up to
+    # 999 steps stale.
+    p = os.path.join(run_dir, f"ckpt_step{h.global_step:06d}.pt")
+    save_ckpt(p, model, opt, h.global_step, cfg.epochs, 0, best, cfg)
     from .evaluate import eval_run
     eval_run(run_dir, "test")
 
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 

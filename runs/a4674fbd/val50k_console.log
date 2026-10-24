@@ -1,0 +1,51 @@
+
+Loading weights:   0%|          | 0/400 [00:00<?, ?it/s]
+Loading weights:  58%|█████▊    | 233/400 [00:00<00:00, 2298.85it/s]
+Loading weights: 100%|██████████| 400/400 [00:00<00:00, 2328.04it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-large-patch16-512
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...23}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.weight        | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+checkpoint runs\a4674fbd\ckpt_step005000.pt
+run runs\a4674fbd  sizes [1000, 5000, 10000, 50000]  batch 128  thresholds 1 (0.40..0.40)
+scored 50,000 images in 497.9s (100 img/s)
+
+=== 1,000 images (4,669 supported labels) ===
+  at 0.40: macro F1 0.1067 MCC 0.1126 P 0.0926 R 0.1547 | micro F1 0.4568 MCC 0.4959 P 0.3269 R 0.7578
+
+=== 5,000 images (8,973 supported labels) ===
+  at 0.40: macro F1 0.1732 MCC 0.1833 P 0.1578 R 0.2407 | micro F1 0.4574 MCC 0.4973 P 0.3267 R 0.7624
+
+=== 10,000 images (10,809 supported labels) ===
+  at 0.40: macro F1 0.1968 MCC 0.2084 P 0.1860 R 0.2657 | micro F1 0.4579 MCC 0.4975 P 0.3273 R 0.7615
+
+=== 50,000 images (12,454 supported labels) ===
+  at 0.40: macro F1 0.2197 MCC 0.2344 P 0.2355 R 0.2781 | micro F1 0.4593 MCC 0.4980 P 0.3294 R 0.7586
+
+wrote runs\a4674fbd\validation.json

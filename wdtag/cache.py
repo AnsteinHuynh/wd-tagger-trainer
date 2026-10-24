@@ -1,23 +1,8 @@
 """Sampling + building of the 512x512 image caches.
 
-Cache layout (temporary, rebuilt whenever absent):
+Layout (temporary, rebuilt when absent): `I:/.cache/wd-tagger-trainer/{train,valid,test}/squash/shard#####-{total}.pt`.
 
-    I:/.cache/wd-tagger-trainer/{train,valid,test}/squash/shard#####-{total}.pt
-
-Images are bilinear-resized straight to 512x512 with the aspect ratio not
-preserved ("squash"). A padded-square variant was evaluated too and is
-statistically tied with it once the adapter LR is right (REPORT.md), so only
-squash is built here; the pad cache used for that comparison is a one-off
-produced by scratch/sophie/build_pad_cache.py.
-
-Every shard is ~0.5 GB (625 images of 3x512x512 uint8) and stores, per image,
-its uint8 pixels plus the multi-label annotation as a sparse CSR index:
-
-    {"images": u8 [N,3,512,512], "pos": i64 [nnz], "ptr": i64 [N+1],
-     "ids": i64 [N], "keys": list[str]}
-
-Shards are written to `<name>.tmp` and atomically renamed, so an interrupted
-build simply resumes at the first shard that is missing or invalid.
+Bilinear resize, aspect ratio not preserved ("squash"); padded-square tied it statistically once adapter LR was right (ARM-RESULTS.md), so only squash is built. Shard ~0.5 GB (625 x 3x512x512 uint8) of u8 pixels + sparse CSR labels; `.tmp` then atomic rename, so an interrupted build resumes at the first missing/invalid shard.
 """
 from __future__ import annotations
 
@@ -38,16 +23,20 @@ from .labels import LabelSpace, load_label_space, tag_indices
 
 CACHE_ROOT = r"I:\.cache\wd-tagger-trainer"
 DATASET_ROOT = r"X:\unique\datasets\animetimm-danbooru-wdtagger-v4-w640-ws-full\repo"
-SIZE = 512
-IMAGES_PER_SHARD = 625  # 625 * 3*512*512 B = 0.49 GB
+# Resolution is read at import so every module that does `from .cache import SIZE` binds the
+# same value. It must match the run's `image_size`; train.py refuses to start otherwise.
+# The shard path carries no resolution, so a second size would silently overwrite the first
+# one's 100.3 GB: 512 keeps its tree and every other size gets its own.
+SIZE = int(os.environ.get("WDTAG_SIZE", "512"))
+if SIZE != 512:
+    CACHE_ROOT = CACHE_ROOT + f"-{SIZE}"
+IMAGES_PER_SHARD = 625  # 625 * 3*512*512 B = 0.49 GB; at 384 the same shard is 0.28 GB
 MODE = "squash"         # default geometry; "pad" is an experiment-only alternative
 
-# split -> (dataset subdir, n_images, positions, per-position count)
-# Sampling is always contiguous from the *start* of each tar: mid-tar seeking
-# costs one HDD seek per member (~0.4 ms) and becomes the bottleneck on a busy
-# disk, while reading the first few MB of every shard is fully sequential.
-# Shard order inside these tars is shuffled, so shard starts are already a
-# spread-out sample of the corpus.
+# split -> (subdir, n_images, positions, per-position count)
+# Sampling is contiguous from each tar's start: mid-tar seeking costs an HDD seek per
+# member (~0.4 ms) and bottlenecks a busy disk, while the first few MB are sequential.
+# Shard order is shuffled, so starts are already spread out.
 SPLITS = {
     "train": dict(subdir="train", n=10_000, positions=(0.0,), per_pos=None),
     "valid": dict(subdir="val", n=1_000, positions=(0.0,), per_pos=None),
@@ -63,7 +52,7 @@ class PlanEntry:
 
 
 def build_plan(split: str) -> list[PlanEntry]:
-    """Deterministic sampling plan: cheap header seeks, no full-shard scans."""
+    """Deterministic plan: header seeks, no full scans."""
     spec = SPLITS[split]
     shards = sorted(
         f for f in os.listdir(os.path.join(DATASET_ROOT, spec["subdir"])) if f.endswith(".tar")
@@ -78,7 +67,7 @@ def build_plan(split: str) -> list[PlanEntry]:
 
 
 def _read_samples(tar_path: str, start_frac: float, n: int) -> list[tuple[str, bytes, dict]]:
-    """Read `n` consecutive (image, json) pairs from `start_frac` of a tar."""
+    """`n` consecutive (image, json) pairs from `start_frac`."""
     size = os.path.getsize(tar_path)
     out: list[tuple[str, bytes, dict]] = []
     pending: dict[str, bytes] = {}
@@ -129,7 +118,7 @@ def _validate(path: str, expect_n: int) -> bool:
 
 
 def build_split(split: str, mode: str = MODE, workers: int = 12, log=None) -> None:
-    """Build every missing shard for `split`. Idempotent and resumable."""
+    """Build missing shards for `split`; idempotent, resumable."""
     if log is None:
         log = lambda *a, **k: print(*a, **k, flush=True)
     t_start = time.time()

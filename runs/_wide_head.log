@@ -1,0 +1,326 @@
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\b2a924f1
+config sha8: b2a924f1
+checkpoint selection metric: micro_f1 (--select-metric micro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 4429.42it/s]
+params: OFT 1.30M, head 38.34M, frozen backbone 87.0M, 73 OFT modules
+torch.compile(mode=max-autotune) ready in 1.6s
+no checkpoint found, starting fresh
+[stream] one pass over 5,321,713 images in 110,870 steps, batch 48, 8 decode threads
+debugpics: 48/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\b2a924f1\debugpics
+Autotune Choices Stats:
+{"num_choices": 20, "num_triton_choices": 19, "best_kernel": "triton_mm_4379", "best_kernel_desc": "ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4", "best_time": 0.10751999914646149, "best_triton_pos": 0}
+AUTOTUNE addmm(48x12476, 48x3072, 3072x12476)
+strides: [0, 1], [3072, 1], [1, 3072]
+dtypes: torch.bfloat16, torch.bfloat16, torch.bfloat16
+  triton_mm_4379 0.1075 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4
+  triton_mm_4387 0.1075 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_4388 0.1075 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_4378 0.1085 ms 99.1% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=8
+  triton_mm_4375 0.1096 ms 98.1% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=32, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4
+  triton_mm_4382 0.1096 ms 98.1% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_4385 0.1106 ms 97.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_4381 0.1116 ms 96.3% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_4383 0.1116 ms 96.3% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=4
+  addmm 0.1126 ms 95.5% 
+SingleProcess AUTOTUNE benchmarking takes 0.9511 seconds and 0.0046 seconds precompiling for 20 choices
+Autotune Choices Stats:
+{"num_choices": 20, "num_triton_choices": 19, "best_kernel": "mm", "best_time": 0.1085439994931221, "best_triton_pos": 1, "best_triton_time": 0.1157120019197464, "best_triton_kernel": "triton_mm_4394", "best_triton_kernel_desc": "ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=32, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4"}
+AUTOTUNE mm(48x12476, 12476x3072)
+strides: [12476, 1], [3072, 1]
+dtypes: torch.bfloat16, torch.bfloat16
+  mm 0.1085 ms 100.0% 
+  triton_mm_4394 0.1157 ms 93.8% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=64, BLOCK_N=32, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4
+  triton_mm_4392 0.1188 ms 91.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=32, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_4397 0.1331 ms 81.5% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=8
+  triton_mm_4393 0.1403 ms 77.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=32, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_4404 0.1403 ms 77.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_4391 0.1423 ms 76.3% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=128, BLOCK_M=32, BLOCK_N=32, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=2, num_warps=4
+  triton_mm_4406 0.1587 ms 68.4% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_4403 0.1618 ms 67.1% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_4401 0.1628 ms 66.7% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+SingleProcess AUTOTUNE benchmarking takes 1.0610 seconds and 0.0042 seconds precompiling for 20 choices
+Autotune Choices Stats:
+{"num_choices": 22, "num_triton_choices": 21, "best_kernel": "triton_mm_4419", "best_kernel_desc": "ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8", "best_time": 0.06963200122117996, "best_triton_pos": 0}
+AUTOTUNE mm(12476x48, 48x3072)
+strides: [1, 12476], [3072, 1]
+dtypes: torch.bfloat16, torch.bfloat16
+  triton_mm_4419 0.0696 ms 100.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_4416 0.0727 ms 95.8% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=8
+  triton_mm_4418 0.0758 ms 91.9% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_4414 0.0768 ms 90.7% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=16, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=2, num_warps=4
+  triton_mm_4415 0.0778 ms 89.5% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=2, num_warps=4
+  triton_mm_4422 0.0778 ms 89.5% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=128, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_4426 0.0798 ms 87.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_4427 0.0829 ms 84.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=128, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_4417 0.0840 ms 82.9% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=4
+  triton_mm_4411 0.0860 ms 81.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=32, BLOCK_N=64, EVEN_K=False, GROUP_M=8, USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+SingleProcess AUTOTUNE benchmarking takes 1.0043 seconds and 0.0042 seconds precompiling for 22 choices
+debugpics: 96/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\b2a924f1\debugpics
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\b2a924f1\debugpics
+step 20/110870 loss 0.0121 lr 2.00e-04/4.80e-05 5 img/s vram 16.7GB
+step 40/110870 loss 0.0125 lr 4.00e-04/9.60e-05 148 img/s vram 16.7GB
+step 60/110870 loss 0.0117 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 80/110870 loss 0.0118 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 100/110870 loss 0.0104 lr 5.00e-04/1.20e-04 146 img/s vram 16.7GB
+step 120/110870 loss 0.0101 lr 5.00e-04/1.20e-04 156 img/s vram 16.7GB
+step 140/110870 loss 0.0090 lr 5.00e-04/1.20e-04 142 img/s vram 16.7GB
+step 160/110870 loss 0.0112 lr 5.00e-04/1.20e-04 144 img/s vram 16.7GB
+step 180/110870 loss 0.0104 lr 5.00e-04/1.20e-04 143 img/s vram 16.7GB
+step 200/110870 loss 0.0109 lr 5.00e-04/1.20e-04 153 img/s vram 16.7GB
+step 220/110870 loss 0.0090 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 240/110870 loss 0.0099 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 260/110870 loss 0.0104 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 280/110870 loss 0.0083 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 300/110870 loss 0.0097 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 320/110870 loss 0.0088 lr 5.00e-04/1.20e-04 166 img/s vram 16.7GB
+step 340/110870 loss 0.0092 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 360/110870 loss 0.0094 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 380/110870 loss 0.0084 lr 5.00e-04/1.20e-04 158 img/s vram 16.7GB
+step 400/110870 loss 0.0103 lr 5.00e-04/1.20e-04 164 img/s vram 16.7GB
+step 420/110870 loss 0.0093 lr 5.00e-04/1.20e-04 145 img/s vram 16.7GB
+step 440/110870 loss 0.0084 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 460/110870 loss 0.0105 lr 5.00e-04/1.20e-04 149 img/s vram 16.7GB
+step 480/110870 loss 0.0100 lr 5.00e-04/1.20e-04 164 img/s vram 16.7GB
+step 500/110870 loss 0.0090 lr 5.00e-04/1.20e-04 164 img/s vram 16.7GB
+[stream] pass 0: finished tar 1/213 (24,960 samples)
+step 520/110870 loss 0.0089 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 540/110870 loss 0.0100 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 560/110870 loss 0.0083 lr 5.00e-04/1.20e-04 160 img/s vram 16.7GB
+step 580/110870 loss 0.0084 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 600/110870 loss 0.0093 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 620/110870 loss 0.0091 lr 5.00e-04/1.20e-04 158 img/s vram 16.7GB
+step 640/110870 loss 0.0084 lr 5.00e-04/1.20e-04 163 img/s vram 16.7GB
+step 660/110870 loss 0.0097 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 680/110870 loss 0.0091 lr 5.00e-04/1.20e-04 168 img/s vram 16.7GB
+step 700/110870 loss 0.0099 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 720/110870 loss 0.0091 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 740/110870 loss 0.0097 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 760/110870 loss 0.0090 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 780/110870 loss 0.0092 lr 5.00e-04/1.20e-04 156 img/s vram 16.7GB
+step 800/110870 loss 0.0095 lr 5.00e-04/1.20e-04 155 img/s vram 16.7GB
+step 820/110870 loss 0.0081 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 840/110870 loss 0.0095 lr 5.00e-04/1.20e-04 157 img/s vram 16.7GB
+step 860/110870 loss 0.0078 lr 5.00e-04/1.20e-04 157 img/s vram 16.7GB
+step 880/110870 loss 0.0087 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 900/110870 loss 0.0083 lr 5.00e-04/1.20e-04 155 img/s vram 16.7GB
+step 920/110870 loss 0.0078 lr 5.00e-04/1.20e-04 163 img/s vram 16.7GB
+step 940/110870 loss 0.0088 lr 5.00e-04/1.20e-04 152 img/s vram 16.7GB
+step 960/110870 loss 0.0092 lr 5.00e-04/1.20e-04 159 img/s vram 16.7GB
+step 980/110870 loss 0.0079 lr 5.00e-04/1.20e-04 158 img/s vram 16.7GB
+step 1000/110870 loss 0.0092 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 1020/110870 loss 0.0088 lr 5.00e-04/1.20e-04 157 img/s vram 16.7GB
+[stream] pass 0: finished tar 2/213 (49,968 samples)
+step 1040/110870 loss 0.0090 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 1060/110870 loss 0.0100 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1080/110870 loss 0.0074 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1100/110870 loss 0.0083 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1120/110870 loss 0.0084 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1140/110870 loss 0.0080 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1160/110870 loss 0.0073 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1180/110870 loss 0.0090 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 1200/110870 loss 0.0084 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1220/110870 loss 0.0071 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1240/110870 loss 0.0087 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1260/110870 loss 0.0081 lr 5.00e-04/1.20e-04 152 img/s vram 16.7GB
+step 1280/110870 loss 0.0078 lr 5.00e-04/1.20e-04 149 img/s vram 16.7GB
+step 1300/110870 loss 0.0081 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1320/110870 loss 0.0080 lr 5.00e-04/1.20e-04 149 img/s vram 16.7GB
+step 1340/110870 loss 0.0080 lr 5.00e-04/1.20e-04 152 img/s vram 16.7GB
+step 1360/110870 loss 0.0083 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1380/110870 loss 0.0079 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1400/110870 loss 0.0083 lr 5.00e-04/1.20e-04 149 img/s vram 16.7GB
+step 1420/110870 loss 0.0077 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 1440/110870 loss 0.0084 lr 5.00e-04/1.20e-04 144 img/s vram 16.7GB
+step 1460/110870 loss 0.0076 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1480/110870 loss 0.0074 lr 5.00e-04/1.20e-04 149 img/s vram 16.7GB
+step 1500/110870 loss 0.0078 lr 5.00e-04/1.20e-04 153 img/s vram 16.7GB
+step 1520/110870 loss 0.0078 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1540/110870 loss 0.0081 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+[stream] pass 0: finished tar 3/213 (74,976 samples)
+step 1560/110870 loss 0.0087 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1580/110870 loss 0.0084 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1600/110870 loss 0.0078 lr 5.00e-04/1.20e-04 152 img/s vram 16.7GB
+step 1620/110870 loss 0.0083 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1640/110870 loss 0.0085 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1660/110870 loss 0.0085 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 1680/110870 loss 0.0085 lr 5.00e-04/1.20e-04 153 img/s vram 16.7GB
+step 1700/110870 loss 0.0087 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1720/110870 loss 0.0084 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1740/110870 loss 0.0082 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1760/110870 loss 0.0076 lr 5.00e-04/1.20e-04 153 img/s vram 16.7GB
+step 1780/110870 loss 0.0094 lr 5.00e-04/1.20e-04 148 img/s vram 16.7GB
+step 1800/110870 loss 0.0072 lr 5.00e-04/1.20e-04 146 img/s vram 16.7GB
+step 1820/110870 loss 0.0082 lr 5.00e-04/1.20e-04 147 img/s vram 16.7GB
+step 1840/110870 loss 0.0078 lr 5.00e-04/1.20e-04 159 img/s vram 16.7GB
+step 1860/110870 loss 0.0075 lr 5.00e-04/1.20e-04 154 img/s vram 16.7GB
+step 1880/110870 loss 0.0083 lr 5.00e-04/1.20e-04 150 img/s vram 16.7GB
+step 1900/110870 loss 0.0097 lr 5.00e-04/1.20e-04 146 img/s vram 16.7GB
+step 1920/110870 loss 0.0079 lr 5.00e-04/1.20e-04 152 img/s vram 16.7GB
+step 1940/110870 loss 0.0087 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 1960/110870 loss 0.0079 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 1980/110870 loss 0.0078 lr 5.00e-04/1.20e-04 157 img/s vram 16.7GB
+step 2000/110870 loss 0.0092 lr 5.00e-04/1.20e-04 153 img/s vram 16.7GB
+step 2020/110870 loss 0.0068 lr 5.00e-04/1.20e-04 159 img/s vram 16.7GB
+step 2040/110870 loss 0.0084 lr 5.00e-04/1.20e-04 156 img/s vram 16.7GB
+step 2060/110870 loss 0.0081 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+[stream] pass 0: finished tar 4/213 (99,984 samples)
+step 2080/110870 loss 0.0087 lr 5.00e-04/1.20e-04 151 img/s vram 16.7GB
+step 2100/110870 loss 0.0082 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 2120/110870 loss 0.0069 lr 5.00e-04/1.20e-04 167 img/s vram 16.7GB
+step 2140/110870 loss 0.0095 lr 5.00e-04/1.20e-04 161 img/s vram 16.7GB
+step 2160/110870 loss 0.0084 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 2180/110870 loss 0.0104 lr 5.00e-04/1.20e-04 165 img/s vram 16.7GB
+step 2200/110870 loss 0.0075 lr 5.00e-04/1.20e-04 167 img/s vram 16.7GB
+step 2220/110870 loss 0.0080 lr 5.00e-04/1.20e-04 162 img/s vram 16.7GB
+step 2240/110870 loss 0.0073 lr 5.00e-04/1.20e-04 160 img/s vram 16.7GB
+step 2260/110870 loss 0.0087 lr 5.00e-04/1.20e-04 163 img/s vram 16.7GB
+step 2280/110870 loss 0.0088 lr 5.00e-04/1.20e-04 167 img/s vram 16.7GB
+step 2300/110870 loss 0.0082 lr 5.00e-04/1.20e-04 160 img/s vram 16.7GB
+step 2320/110870 loss 0.0077 lr 5.00e-04/1.20e-04 166 img/s vram 16.7GB
+step 2340/110870 loss 0.0082 lr 5.00e-04/1.20e-04 154 img/s vram 16.7GB
+step 2360/110870 loss 0.0084 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 2380/110870 loss 0.0075 lr 4.99e-04/1.20e-04 155 img/s vram 16.7GB
+step 2400/110870 loss 0.0076 lr 4.99e-04/1.20e-04 158 img/s vram 16.7GB
+step 2420/110870 loss 0.0081 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 2440/110870 loss 0.0084 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 2460/110870 loss 0.0086 lr 4.99e-04/1.20e-04 158 img/s vram 16.7GB
+step 2480/110870 loss 0.0074 lr 4.99e-04/1.20e-04 146 img/s vram 16.7GB
+step 2500/110870 loss 0.0080 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 2520/110870 loss 0.0076 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 2540/110870 loss 0.0086 lr 4.99e-04/1.20e-04 155 img/s vram 16.7GB
+step 2560/110870 loss 0.0076 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 2580/110870 loss 0.0080 lr 4.99e-04/1.20e-04 157 img/s vram 16.7GB
+[stream] pass 0: finished tar 5/213 (124,992 samples)
+step 2600/110870 loss 0.0072 lr 4.99e-04/1.20e-04 158 img/s vram 16.7GB
+step 2620/110870 loss 0.0076 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 2640/110870 loss 0.0077 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 2660/110870 loss 0.0079 lr 4.99e-04/1.20e-04 155 img/s vram 16.7GB
+step 2680/110870 loss 0.0073 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 2700/110870 loss 0.0080 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 2720/110870 loss 0.0079 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 2740/110870 loss 0.0083 lr 4.99e-04/1.20e-04 161 img/s vram 16.7GB
+step 2760/110870 loss 0.0068 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 2780/110870 loss 0.0078 lr 4.99e-04/1.20e-04 166 img/s vram 16.7GB
+step 2800/110870 loss 0.0089 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 2820/110870 loss 0.0083 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 2840/110870 loss 0.0079 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 2860/110870 loss 0.0077 lr 4.99e-04/1.20e-04 166 img/s vram 16.7GB
+step 2880/110870 loss 0.0080 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 2900/110870 loss 0.0077 lr 4.99e-04/1.20e-04 149 img/s vram 16.7GB
+step 2920/110870 loss 0.0088 lr 4.99e-04/1.20e-04 148 img/s vram 16.7GB
+step 2940/110870 loss 0.0084 lr 4.99e-04/1.20e-04 152 img/s vram 16.7GB
+step 2960/110870 loss 0.0114 lr 4.99e-04/1.20e-04 149 img/s vram 16.7GB
+step 2980/110870 loss 0.0075 lr 4.99e-04/1.20e-04 144 img/s vram 16.7GB
+step 3000/110870 loss 0.0081 lr 4.99e-04/1.20e-04 154 img/s vram 16.7GB
+step 3020/110870 loss 0.0079 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 3040/110870 loss 0.0080 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3060/110870 loss 0.0077 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 3080/110870 loss 0.0076 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3100/110870 loss 0.0072 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3120/110870 loss 0.0073 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+[stream] pass 0: finished tar 6/213 (150,000 samples)
+step 3140/110870 loss 0.0073 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3160/110870 loss 0.0076 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 3180/110870 loss 0.0078 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3200/110870 loss 0.0083 lr 4.99e-04/1.20e-04 169 img/s vram 16.7GB
+step 3220/110870 loss 0.0079 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3240/110870 loss 0.0081 lr 4.99e-04/1.20e-04 156 img/s vram 16.7GB
+step 3260/110870 loss 0.0077 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3280/110870 loss 0.0074 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 3300/110870 loss 0.0078 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3320/110870 loss 0.0086 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 3340/110870 loss 0.0085 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3360/110870 loss 0.0083 lr 4.99e-04/1.20e-04 167 img/s vram 16.7GB
+step 3380/110870 loss 0.0076 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3400/110870 loss 0.0088 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3420/110870 loss 0.0092 lr 4.99e-04/1.20e-04 166 img/s vram 16.7GB
+step 3440/110870 loss 0.0071 lr 4.99e-04/1.20e-04 167 img/s vram 16.7GB
+step 3460/110870 loss 0.0085 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3480/110870 loss 0.0085 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3500/110870 loss 0.0077 lr 4.99e-04/1.20e-04 164 img/s vram 16.7GB
+step 3520/110870 loss 0.0075 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3540/110870 loss 0.0082 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3560/110870 loss 0.0092 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3580/110870 loss 0.0085 lr 4.99e-04/1.20e-04 161 img/s vram 16.7GB
+step 3600/110870 loss 0.0075 lr 4.99e-04/1.20e-04 165 img/s vram 16.7GB
+step 3620/110870 loss 0.0069 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 3640/110870 loss 0.0075 lr 4.99e-04/1.20e-04 149 img/s vram 16.7GB
+[stream] pass 0: finished tar 7/213 (174,960 samples)
+step 3660/110870 loss 0.0080 lr 4.99e-04/1.20e-04 149 img/s vram 16.7GB
+step 3680/110870 loss 0.0076 lr 4.99e-04/1.20e-04 148 img/s vram 16.7GB
+step 3700/110870 loss 0.0082 lr 4.99e-04/1.20e-04 149 img/s vram 16.7GB
+step 3720/110870 loss 0.0072 lr 4.99e-04/1.20e-04 169 img/s vram 16.7GB
+step 3740/110870 loss 0.0069 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 3760/110870 loss 0.0082 lr 4.99e-04/1.20e-04 160 img/s vram 16.7GB
+step 3780/110870 loss 0.0069 lr 4.99e-04/1.20e-04 161 img/s vram 16.7GB
+step 3800/110870 loss 0.0094 lr 4.99e-04/1.20e-04 169 img/s vram 16.7GB
+step 3820/110870 loss 0.0075 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 3840/110870 loss 0.0083 lr 4.99e-04/1.20e-04 150 img/s vram 16.7GB
+step 3860/110870 loss 0.0088 lr 4.99e-04/1.20e-04 158 img/s vram 16.7GB
+step 3880/110870 loss 0.0079 lr 4.99e-04/1.20e-04 167 img/s vram 16.7GB
+step 3900/110870 loss 0.0069 lr 4.99e-04/1.20e-04 161 img/s vram 16.7GB
+step 3920/110870 loss 0.0076 lr 4.99e-04/1.20e-04 157 img/s vram 16.7GB
+step 3940/110870 loss 0.0091 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 3960/110870 loss 0.0093 lr 4.99e-04/1.20e-04 159 img/s vram 16.7GB
+step 3980/110870 loss 0.0074 lr 4.99e-04/1.20e-04 163 img/s vram 16.7GB
+step 4000/110870 loss 0.0082 lr 4.99e-04/1.20e-04 162 img/s vram 16.7GB
+step 4020/110870 loss 0.0071 lr 4.98e-04/1.20e-04 160 img/s vram 16.7GB
+step 4040/110870 loss 0.0078 lr 4.98e-04/1.20e-04 164 img/s vram 16.7GB
+step 4060/110870 loss 0.0078 lr 4.98e-04/1.20e-04 163 img/s vram 16.7GB
+step 4080/110870 loss 0.0084 lr 4.98e-04/1.20e-04 160 img/s vram 16.7GB
+step 4100/110870 loss 0.0080 lr 4.98e-04/1.20e-04 153 img/s vram 16.7GB
+step 4120/110870 loss 0.0078 lr 4.98e-04/1.20e-04 161 img/s vram 16.7GB
+step 4140/110870 loss 0.0066 lr 4.98e-04/1.20e-04 159 img/s vram 16.7GB
+step 4160/110870 loss 0.0079 lr 4.98e-04/1.20e-04 157 img/s vram 16.7GB
+[stream] pass 0: finished tar 8/213 (199,968 samples)
+step 4180/110870 loss 0.0083 lr 4.98e-04/1.20e-04 162 img/s vram 16.7GB
+step 4200/110870 loss 0.0076 lr 4.98e-04/1.20e-04 163 img/s vram 16.7GB
+step 4220/110870 loss 0.0077 lr 4.98e-04/1.20e-04 166 img/s vram 16.7GB
+step 4240/110870 loss 0.0081 lr 4.98e-04/1.20e-04 162 img/s vram 16.7GB
+step 4260/110870 loss 0.0083 lr 4.98e-04/1.20e-04 158 img/s vram 16.7GB
+step 4280/110870 loss 0.0069 lr 4.98e-04/1.20e-04 163 img/s vram 16.7GB
+step 4300/110870 loss 0.0076 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4320/110870 loss 0.0080 lr 4.98e-04/1.20e-04 164 img/s vram 16.7GB
+step 4340/110870 loss 0.0071 lr 4.98e-04/1.20e-04 160 img/s vram 16.7GB
+step 4360/110870 loss 0.0090 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4380/110870 loss 0.0080 lr 4.98e-04/1.20e-04 166 img/s vram 16.7GB
+step 4400/110870 loss 0.0078 lr 4.98e-04/1.20e-04 159 img/s vram 16.7GB
+step 4420/110870 loss 0.0078 lr 4.98e-04/1.20e-04 161 img/s vram 16.7GB
+step 4440/110870 loss 0.0082 lr 4.98e-04/1.20e-04 162 img/s vram 16.7GB
+step 4460/110870 loss 0.0075 lr 4.98e-04/1.20e-04 169 img/s vram 16.7GB
+step 4480/110870 loss 0.0076 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4500/110870 loss 0.0088 lr 4.98e-04/1.20e-04 161 img/s vram 16.7GB
+step 4520/110870 loss 0.0088 lr 4.98e-04/1.20e-04 167 img/s vram 16.7GB
+step 4540/110870 loss 0.0075 lr 4.98e-04/1.20e-04 167 img/s vram 16.7GB
+step 4560/110870 loss 0.0083 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4580/110870 loss 0.0070 lr 4.98e-04/1.20e-04 163 img/s vram 16.7GB
+step 4600/110870 loss 0.0075 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4620/110870 loss 0.0091 lr 4.98e-04/1.20e-04 167 img/s vram 16.7GB
+step 4640/110870 loss 0.0071 lr 4.98e-04/1.20e-04 165 img/s vram 16.7GB
+step 4660/110870 loss 0.0075 lr 4.98e-04/1.20e-04 163 img/s vram 16.7GB
+step 4680/110870 loss 0.0076 lr 4.98e-04/1.20e-04 162 img/s vram 16.7GB
+[stream] pass 0: finished tar 9/213 (224,976 samples)
+step 4700/110870 loss 0.0082 lr 4.98e-04/1.20e-04 167 img/s vram 16.7GB
+step 4720/110870 loss 0.0082 lr 4.98e-04/1.20e-04 164 img/s vram 16.7GB
+step 4740/110870 loss 0.0075 lr 4.98e-04/1.19e-04 168 img/s vram 16.7GB
+step 4760/110870 loss 0.0081 lr 4.98e-04/1.19e-04 163 img/s vram 16.7GB
+step 4780/110870 loss 0.0071 lr 4.98e-04/1.19e-04 165 img/s vram 16.7GB
+step 4800/110870 loss 0.0079 lr 4.98e-04/1.19e-04 164 img/s vram 16.7GB
+step 4820/110870 loss 0.0080 lr 4.98e-04/1.19e-04 168 img/s vram 16.7GB
+step 4840/110870 loss 0.0072 lr 4.98e-04/1.19e-04 163 img/s vram 16.7GB
+step 4860/110870 loss 0.0073 lr 4.98e-04/1.19e-04 163 img/s vram 16.7GB
+step 4880/110870 loss 0.0075 lr 4.98e-04/1.19e-04 166 img/s vram 16.7GB
+step 4900/110870 loss 0.0078 lr 4.98e-04/1.19e-04 168 img/s vram 16.7GB
+step 4920/110870 loss 0.0077 lr 4.98e-04/1.19e-04 163 img/s vram 16.7GB
+step 4940/110870 loss 0.0082 lr 4.98e-04/1.19e-04 164 img/s vram 16.7GB
+step 4960/110870 loss 0.0073 lr 4.98e-04/1.19e-04 166 img/s vram 16.7GB
+step 4980/110870 loss 0.0072 lr 4.98e-04/1.19e-04 166 img/s vram 16.7GB
+step 5000/110870 loss 0.0079 lr 4.98e-04/1.19e-04 156 img/s vram 16.7GB
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\b2a924f1\ckpt_step005000.pt
+VAL step 5000 (ep 0): macro_f1 0.0480 macro_mcc 0.0507 micro_f1 0.4699 micro_mcc 0.5024 (supported_macro_f1 0.1297) | best by micro_f1
+new best val micro_f1 0.4699 (selection metric: micro) -> best_val.pt
+step 5020/110870 loss 0.0078 lr 4.98e-04/1.19e-04 13 img/s vram 16.7GB
+max-steps reached, stopped

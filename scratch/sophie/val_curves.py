@@ -1,7 +1,7 @@
 """Validation curves for every run: do we ever see a real decline?
 
-One val point per epoch (312 steps at 10k images), so this is the coarsest
-possible view of overfitting. Train loss is at the top of each row.
+One val point per epoch (208 steps at 10k images, batch 48), so this is the
+coarsest possible view of overfitting. Train loss is at the top of each row.
 """
 import glob
 import json

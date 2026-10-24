@@ -10,7 +10,6 @@
   "head_pool": "cls_mean",
   "head_hidden": 0,
   "head_dropout": 0.1,
-  "optimizer": "sinksgd_adv",
   "lr_oft": 0.0005,
   "lr_head": 0.00012,
   "weight_decay": 0.0,

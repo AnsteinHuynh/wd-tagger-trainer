@@ -1,10 +1,6 @@
 """Dataset + loader over the .pt image caches.
 
-Notes
------
-Shards are opened lazily *per process* with `mmap=True`: holding a mapped
-tensor as an attribute would make the DataLoader pickle (and therefore copy)
-gigabytes of pixels into every worker on Windows' spawn start method.
+Shards open lazily per process with `mmap=True`: a mapped tensor held as an attribute would make the DataLoader pickle gigabytes of pixels into every worker on Windows spawn.
 """
 from __future__ import annotations
 
@@ -29,9 +25,8 @@ def shard_len(split: str, k: int) -> int:
     return min(IMAGES_PER_SHARD, total - k * IMAGES_PER_SHARD)
 
 
-# One mapping per shard file per process.  Opening the same shard twice costs
-# another full copy of its pages on Windows, so every consumer (dataset, label
-# statistics, target matrices) goes through this cache.
+# One mapping per shard per process: opening a shard twice costs another full copy of
+# its pages on Windows, so every consumer (dataset, label stats, targets) uses this cache.
 _SHARD_CACHE: dict[str, dict] = {}
 
 
@@ -48,7 +43,7 @@ def close_shards() -> None:
 
 
 class CacheDataset(Dataset):
-    """Read-only view over the cached shards of one split (lazy, mmap-backed)."""
+    """Read-only, lazy mmap view over one split's shards."""
 
     def __init__(self, split: str, mode: str, n_labels: int):
         self.split, self.mode = split, mode
@@ -78,14 +73,7 @@ class CacheDataset(Dataset):
 
     # ---------------------------------------------------------------- pickling
     def __getstate__(self):
-        """Never ship mapped tensors to DataLoader workers.
-
-        The parent opens the shards (e.g. for the debug dump), and on Windows a
-        spawned worker inherits the dataset by pickling it.  Pickling a mapped
-        tensor serialises its *contents*, which would copy the whole 7.9 GB
-        train cache into every worker.  Workers get paths and open their own
-        maps instead.
-        """
+        """Never ship mapped tensors to DataLoader workers: pickling a mapped tensor serialises its contents -- the whole 7.9 GB train cache into every spawned worker. Workers get paths and open their own maps."""
         state = self.__dict__.copy()
         state["_shards"] = []
         state["_pid"] = None
@@ -113,7 +101,7 @@ class CacheDataset(Dataset):
 
 
 class MultiHotCollator:
-    """Stack uint8 images and multi-hot targets; normalisation happens on the GPU."""
+    """Stack uint8 images and multi-hot targets; normalisation on GPU."""
 
     def __init__(self, n_labels: int):
         self.n_labels = n_labels
@@ -125,7 +113,7 @@ class MultiHotCollator:
 
 
 def label_priors(split: str, mode: str, n_labels: int) -> np.ndarray:
-    """Per-label positive rate over a split (used to initialise the head bias)."""
+    """Per-label positive rate, for head-bias init."""
     paths = shard_paths(split, mode)
     counts = np.zeros(n_labels, dtype=np.int64)
     n = 0
@@ -137,7 +125,7 @@ def label_priors(split: str, mode: str, n_labels: int) -> np.ndarray:
 
 
 def load_targets(split: str, mode: str, n_labels: int) -> np.ndarray:
-    """Dense bool [N, L] ground truth for a split (used by evaluation)."""
+    """Dense bool [N, L] ground truth for evaluation."""
     paths = shard_paths(split, mode)
     out = np.zeros((SPLITS[split]["n"], n_labels), dtype=bool)
     base = 0

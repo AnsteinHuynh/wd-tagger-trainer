@@ -1,0 +1,126 @@
+{
+  "checkpoint": "runs\\f8ff5c91\\ckpt_step005200.pt",
+  "run": "runs\\f8ff5c91",
+  "batch_size": 256,
+  "seconds": 231.2,
+  "thresholds": [
+    0.4
+  ],
+  "subsets": {
+    "1000": {
+      "macro_f1": [
+        0.034352777730619455
+      ],
+      "macro_mcc": [
+        0.033958684723987234
+      ],
+      "macro_precision": [
+        0.035358785352579324
+      ],
+      "macro_recall": [
+        0.03865147951375828
+      ],
+      "micro_f1": [
+        0.4139533619611893
+      ],
+      "micro_mcc": [
+        0.41529499524782837
+      ],
+      "micro_precision": [
+        0.3693975552968568
+      ],
+      "micro_recall": [
+        0.4707318580788725
+      ],
+      "macro_f1_per_tag_best": 0.034352777730619455,
+      "n_supported_labels": 4669
+    },
+    "5000": {
+      "macro_f1": [
+        0.045243641280123474
+      ],
+      "macro_mcc": [
+        0.04578731224337496
+      ],
+      "macro_precision": [
+        0.054136681887072546
+      ],
+      "macro_recall": [
+        0.046340242758358484
+      ],
+      "micro_f1": [
+        0.41642756128863495
+      ],
+      "micro_mcc": [
+        0.41800128246637175
+      ],
+      "micro_precision": [
+        0.37033823964174417
+      ],
+      "micro_recall": [
+        0.47561932030374704
+      ],
+      "macro_f1_per_tag_best": 0.045243641280123474,
+      "n_supported_labels": 8973
+    },
+    "10000": {
+      "macro_f1": [
+        0.04860809911190701
+      ],
+      "macro_mcc": [
+        0.049976888828962895
+      ],
+      "macro_precision": [
+        0.0630259528816509
+      ],
+      "macro_recall": [
+        0.04823278209192632
+      ],
+      "micro_f1": [
+        0.4167227375894462
+      ],
+      "micro_mcc": [
+        0.41820405750427997
+      ],
+      "micro_precision": [
+        0.37121230541790473
+      ],
+      "micro_recall": [
+        0.47495154571502346
+      ],
+      "macro_f1_per_tag_best": 0.04860809911190701,
+      "n_supported_labels": 10809
+    },
+    "50000": {
+      "macro_f1": [
+        0.050890919190412415
+      ],
+      "macro_mcc": [
+        0.05483070226591808
+      ],
+      "macro_precision": [
+        0.08297407088254517
+      ],
+      "macro_recall": [
+        0.0479288288624903
+      ],
+      "micro_f1": [
+        0.41659168979666716
+      ],
+      "micro_mcc": [
+        0.41785795257202185
+      ],
+      "micro_precision": [
+        0.372463618143532
+      ],
+      "micro_recall": [
+        0.4725813264167326
+      ],
+      "macro_f1_per_tag_best": 0.050890919190412415,
+      "n_supported_labels": 12454
+    }
+  },
+  "review": {
+    "note": "macro/micro F1/MCC/P/R at each threshold; macro_f1_per_tag_best tunes a threshold per tag"
+  }
+}

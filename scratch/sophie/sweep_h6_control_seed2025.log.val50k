@@ -1,0 +1,23 @@
+
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]
+Loading weights:  24%|██▎       | 50/211 [00:00<00:00, 405.94it/s]
+Loading weights:  48%|████▊     | 101/211 [00:00<00:00, 451.68it/s]
+Loading weights:  72%|███████▏  | 152/211 [00:00<00:00, 461.66it/s]
+Loading weights: 100%|██████████| 211/211 [00:00<00:00, 497.46it/s]
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\1e312196\ckpt_step005000.pt
+run C:\Users\kerok\apps\wd-tagger-trainer\runs\1e312196  sizes [1000, 5000, 10000, 50000]  batch 256  thresholds 1 (0.40..0.40)
+scored 50,000 images in 232.7s (215 img/s)
+
+=== 1,000 images (4,669 supported labels) ===
+  at 0.40: macro F1 0.0216 MCC 0.0227 P 0.0350 R 0.0173 | micro F1 0.4371 MCC 0.4588 P 0.6337 R 0.3335
+
+=== 5,000 images (8,973 supported labels) ===
+  at 0.40: macro F1 0.0236 MCC 0.0268 P 0.0504 R 0.0177 | micro F1 0.4414 MCC 0.4620 P 0.6320 R 0.3392
+
+=== 10,000 images (10,809 supported labels) ===
+  at 0.40: macro F1 0.0245 MCC 0.0289 P 0.0588 R 0.0182 | micro F1 0.4408 MCC 0.4616 P 0.6323 R 0.3383
+
+=== 50,000 images (12,454 supported labels) ===
+  at 0.40: macro F1 0.0252 MCC 0.0315 P 0.0771 R 0.0183 | micro F1 0.4393 MCC 0.4609 P 0.6352 R 0.3358
+
+wrote C:\Users\kerok\apps\wd-tagger-trainer\runs\1e312196\validation.json

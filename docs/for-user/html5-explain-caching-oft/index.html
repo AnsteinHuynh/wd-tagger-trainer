@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en" class="js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frozen is not cacheable — feature caching, OFT and the two-tower design</title>
+<style>
+  :root{
+    --bg:#0E1116; --panel:#121923; --panel2:#0C1219; --line:#24303D;
+    --ink:#ECECEC; --dim:#93A1B1; --faint:#66768A;
+    --blue:#58C4DD; --yellow:#F4D345; --green:#83C167; --red:#FC6255; --purple:#9A72AC;
+    --sans:ui-sans-serif,"Segoe UI",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --serif:Georgia,"Times New Roman",Times,serif;
+    --ease:cubic-bezier(.22,.61,.36,1);
+    --railw:clamp(176px,11vw,230px);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  html{background:var(--bg)}
+  body{
+    margin:0; overflow:hidden; color:var(--ink); background:var(--bg);
+    font-family:var(--sans); font-size:16px; line-height:1.55;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(1000px 680px at 79% -12%, rgba(88,196,221,.085), transparent 62%),
+      radial-gradient(780px 620px at 3% 88%, rgba(154,114,172,.055), transparent 64%),
+      radial-gradient(900px 700px at 55% 112%, rgba(131,193,103,.035), transparent 68%);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.22;
+    background-image:radial-gradient(rgba(236,236,236,.13) .7px, transparent .7px);
+    background-size:44px 44px;
+    mask-image:linear-gradient(180deg,rgba(0,0,0,.55),transparent 42%,transparent 72%,rgba(0,0,0,.35));
+  }
+  ::selection{background:rgba(244,211,69,.28)}
+  button{font-family:inherit}
+  :focus-visible{outline:2px solid rgba(88,196,221,.8); outline-offset:4px; border-radius:8px}
+
+  #prog{
+    position:fixed; top:0; left:0; width:0; height:2px; z-index:80;
+    background:linear-gradient(90deg,var(--blue),var(--yellow));
+    box-shadow:0 0 12px rgba(244,211,69,.45);
+    transition:width .62s var(--ease);
+  }
+
+  .rail{
+    position:fixed; left:clamp(14px,1.4vw,30px); top:50%; transform:translateY(-50%);
+    z-index:50; display:flex; flex-direction:column; gap:1px; width:calc(var(--railw) - 16px);
+  }
+  .rail-link{
+    appearance:none; border:0; background:transparent; color:#697A8D; cursor:pointer;
+    display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:99px;
+    font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; text-align:left;
+    transition:color .3s var(--ease), background .3s var(--ease); min-width:0;
+  }
+  .rail-link .dot{
+    width:7px; height:7px; border-radius:50%; background:#34414F; flex:none;
+    transition:background .35s var(--ease), box-shadow .35s var(--ease), transform .35s var(--ease);
+  }
+  .rail-link .lbl{white-space:nowrap; opacity:.62; overflow:hidden; text-overflow:ellipsis; transition:opacity .3s var(--ease)}
+  .rail-link:hover{color:var(--ink); background:rgba(255,255,255,.025)}
+  .rail-link:hover .lbl{opacity:1}
+  .rail-link.done .dot{background:#3F6F78}
+  .rail-link.on{color:var(--ink); background:rgba(255,255,255,.035)}
+  .rail-link.on .lbl{opacity:1}
+  .rail-link.on .dot{background:var(--yellow); box-shadow:0 0 14px rgba(244,211,69,.85); transform:scale(1.18)}
+
+  .stage{position:fixed; inset:0; z-index:2}
+  .scene{
+    position:absolute; inset:0; z-index:2; opacity:0; visibility:hidden; pointer-events:none;
+    transition:opacity .72s var(--ease), visibility 0s linear .72s;
+  }
+  .scene.active{z-index:4; opacity:1; visibility:visible; pointer-events:auto; transition:opacity .72s var(--ease)}
+  .wrap{
+    position:absolute; left:calc(var(--railw) + 18px); right:clamp(18px,3vw,54px);
+    top:clamp(36px,5.6vh,74px); bottom:clamp(82px,9.6vh,108px);
+    max-width:1540px; margin-inline:auto;
+    display:grid; grid-template-rows:auto minmax(0,1fr); gap:clamp(7px,1.35vh,17px);
+  }
+  .head{min-width:0}
+  .kick{
+    display:flex; align-items:center; gap:10px; margin:0 0 clamp(5px,.85vh,10px);
+    color:var(--blue); font-size:clamp(9.5px,.74vw,11.5px); letter-spacing:.2em; text-transform:uppercase;
+  }
+  .kick .tick{width:24px; height:1px; background:linear-gradient(90deg,var(--blue),transparent); display:inline-block}
+  h1,h2{
+    margin:0; font-size:clamp(30px,3.15vw,52px); line-height:1.055; letter-spacing:-.027em;
+    font-weight:620; max-width:23ch;
+  }
+  h1 em,h2 em{font-style:normal; color:var(--yellow); text-shadow:0 0 30px rgba(244,211,69,.22)}
+  .sub{
+    margin:clamp(6px,1.1vh,11px) 0 0; color:#B7C3D0;
+    font-size:clamp(13px,1.1vw,17.5px); line-height:1.48; max-width:75ch;
+  }
+  .sub.rule{
+    border-left:2px solid rgba(244,211,69,.72); padding-left:14px; max-width:80ch;
+    color:#D7DFE7;
+  }
+  .figure{position:relative; min-height:0; width:100%}
+  .figure > svg{display:block; width:100%; height:100%; overflow:visible}
+  .defs{position:absolute; width:0; height:0; overflow:hidden}
+
+  .hud{
+    position:fixed; left:0; right:0; bottom:0; height:clamp(68px,8.6vh,94px); z-index:60;
+    display:flex; align-items:center; gap:18px; padding-left:calc(var(--railw) + 24px); padding-right:clamp(18px,3vw,54px);
+    pointer-events:none;
+    background:linear-gradient(180deg,rgba(14,17,22,0),rgba(14,17,22,.83) 56%,rgba(14,17,22,.96));
+  }
+  .hud > *{pointer-events:auto}
+  .now{display:flex; align-items:baseline; gap:12px; min-width:180px}
+  .now .num{font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--dim)}
+  .now .name{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#D7DFE7; white-space:nowrap}
+  .pips{display:flex; align-items:center; gap:6px; flex:1; justify-content:center}
+  .pips i{display:block; width:clamp(13px,1.2vw,20px); height:2px; background:#293644; border-radius:2px; transition:background .3s var(--ease), box-shadow .3s var(--ease)}
+  .pips i.on{background:var(--yellow); box-shadow:0 0 10px rgba(244,211,69,.55)}
+  .pips i.seen{background:#526579}
+  .keys{display:flex; align-items:center; gap:10px}
+  .navbtn{
+    appearance:none; cursor:pointer; height:clamp(42px,5vh,52px); min-width:clamp(106px,9vw,132px);
+    padding:0 18px; border-radius:99px; border:1px solid #2B3948; background:rgba(18,25,35,.76);
+    color:#D6DFE8; font-size:13px; letter-spacing:.045em; display:inline-flex; align-items:center; justify-content:center; gap:9px;
+    transition:border-color .24s var(--ease), background .24s var(--ease), color .24s var(--ease), transform .18s var(--ease);
+  }
+  .navbtn:hover:not(:disabled){border-color:rgba(244,211,69,.58); color:#fff; background:rgba(27,37,49,.92)}
+  .navbtn:active:not(:disabled){transform:translateY(1px)}
+  .navbtn:disabled{opacity:.28; cursor:default}
+  .navbtn .ar{font-size:15px; color:var(--yellow); line-height:1}
+  .navbtn.prev .ar{color:var(--blue)}
+
+  .regime{
+    width:100%; border-collapse:collapse; table-layout:fixed;
+    font-size:clamp(13px,1.05vw,17px);
+  }
+  .regime th,.regime td{padding:clamp(8px,1.25vh,15px) clamp(7px,.9vw,15px); border-bottom:1px solid rgba(255,255,255,.07); vertical-align:middle}
+  .regime th{
+    font-size:clamp(9px,.72vw,11px); letter-spacing:.16em; text-transform:uppercase;
+    color:#7C8B9C; font-weight:600; text-align:left; border-bottom-color:rgba(255,255,255,.14);
+  }
+  .regime td{color:#C9D4DF}
+  .regime td:first-child{color:var(--ink); font-weight:600}
+  .regime th:nth-child(3),.regime td:nth-child(3),
+  .regime th:nth-child(4),.regime td:nth-child(4),
+  .regime th:nth-child(5),.regime td:nth-child(5){text-align:right}
+  .regime tbody tr.step{transform:none; opacity:0; transition:opacity .7s var(--ease)}
+  .regime tbody tr.step.in{opacity:1}
+  .regime tbody tr.choice td{background:rgba(244,211,69,.045)}
+  .regime tbody tr.choice td:first-child{box-shadow:inset 2px 0 0 var(--yellow)}
+  .regime small{display:block; color:#7F8FA0; font-size:.72em; letter-spacing:.02em; margin-top:2px; font-weight:400}
+  .yes{color:var(--green); font-weight:600}
+  .no{color:var(--red); font-weight:600}
+  .cheat{height:100%; display:flex; flex-direction:column; justify-content:center; gap:clamp(14px,2.8vh,30px); min-height:0}
+  .rulebox{
+    border-left:2px solid var(--yellow); padding:clamp(8px,1.5vh,16px) 0 clamp(8px,1.5vh,16px) clamp(16px,1.5vw,24px);
+    max-width:1050px;
+  }
+  .rulebox .rl{font-size:clamp(9px,.72vw,11px); letter-spacing:.18em; text-transform:uppercase; color:var(--yellow); margin:0 0 6px}
+  .rulebox p{margin:0; font-size:clamp(20px,2.1vw,34px); line-height:1.3; letter-spacing:-.012em; color:#E8EBEE}
+  .verdict{
+    display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 16px; color:#C9D4DF;
+    font-size:clamp(12px,1vw,16px);
+  }
+  .verdict strong{color:var(--yellow); font-size:clamp(15px,1.28vw,21px); font-weight:600}
+  .verdict .dotsep{width:4px;height:4px;border-radius:50%;background:#4B5B6D;display:inline-block}
+
+  .noscript{position:fixed; inset:0; display:grid; place-items:center; padding:30px; color:#ECECEC; background:#0E1116; z-index:999; font-family:var(--sans)}
+  .sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0}
+
+  /* SVG language */
+  svg text{font-family:var(--sans)}
+  .svg-ink{fill:#ECECEC}
+  .svg-dim{fill:#93A1B1}
+  .svg-faint{fill:#66768A}
+  .svg-blue{fill:#58C4DD}
+  .svg-yellow{fill:#F4D345}
+  .svg-green{fill:#83C167}
+  .svg-red{fill:#FC6255}
+  .svg-purple{fill:#9A72AC}
+  .svg-label{font-size:17px; letter-spacing:.02em}
+  .svg-small{font-size:15px; letter-spacing:.025em}
+  .svg-tiny{font-size:13.5px; letter-spacing:.04em}
+  .svg-kicker{font-size:12.5px; letter-spacing:.18em; text-transform:uppercase}
+  .svg-math{font-family:var(--serif); font-style:italic; letter-spacing:.01em}
+  .svg-mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .svg-num{font-family:var(--mono); font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .glow-y{filter:drop-shadow(0 0 6px rgba(244,211,69,.5))}
+  .glow-b{filter:drop-shadow(0 0 6px rgba(88,196,221,.45))}
+  .glow-g{filter:drop-shadow(0 0 6px rgba(131,193,103,.45))}
+  .glow-r{filter:drop-shadow(0 0 6px rgba(252,98,85,.5))}
+  .glow-p{filter:drop-shadow(0 0 6px rgba(154,114,172,.55))}
+
+  .step{opacity:0; transform:translateY(7px); transition:opacity .7s var(--ease), transform .7s var(--ease)}
+  .step.in{opacity:1; transform:translateY(0)}
+  .step.past{opacity:.15 !important}
+  .dr{stroke-dasharray:1; stroke-dashoffset:1; transition:stroke-dashoffset .88s var(--ease)}
+  .step.in .dr{stroke-dashoffset:0}
+  .needle{transform-box:view-box; transition:transform .9s var(--ease)}
+  .step.in .needle{transform:rotate(34deg)}
+
+  @media (max-width:1180px){
+    :root{--railw:62px}
+    .rail{width:52px}
+    .rail-link .lbl{display:none}
+    .now .name{display:none}
+  }
+  @media (max-width:900px){
+    :root{--railw:0px}
+    .rail{display:none}
+    .wrap{left:16px; right:16px; top:26px; bottom:78px}
+    .hud{padding-left:16px; padding-right:16px; gap:8px}
+    .now{min-width:0}
+    .pips{display:none}
+    .navbtn{min-width:0; padding:0 13px; font-size:12px}
+    .keys{gap:7px}
+    h1,h2{max-width:30ch}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{
+      animation-duration:.001ms !important; animation-iteration-count:1 !important;
+      transition-duration:.001ms !important; transition-delay:0s !important;
+    }
+    .scene{transition:none !important}
+    .step{transform:none !important}
+    .dr{stroke-dashoffset:0 !important}
+    .needle{transform:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="prog" role="progressbar" aria-label="Deck progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="arB" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#58C4DD"/></marker>
+    <marker id="arY" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#F4D345"/></marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#83C167"/></marker>
+    <marker id="arR" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#FC6255"/></marker>
+    <marker id="arP" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9A72AC"/></marker>
+    <marker id="arD" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#66768A"/></marker>
+  </defs>
+</svg>
+
+<nav class="rail" id="rail" aria-label="Scenes">
+  <button type="button" class="rail-link" data-go="0" aria-label="Go to scene 1, thesis"><span class="dot"></span><span class="lbl">Thesis</span></button>
+  <button type="button" class="rail-link" data-go="1" aria-label="Go to scene 2, the step"><span class="dot"></span><span class="lbl">The step</span></button>
+  <button type="button" class="rail-link" data-go="2" aria-label="Go to scene 3, cache"><span class="dot"></span><span class="lbl">Cache</span></button>
+  <button type="button" class="rail-link" data-go="3" aria-label="Go to scene 4, broken key"><span class="dot"></span><span class="lbl">Broken key</span></button>
+  <button type="button" class="rail-link" data-go="4" aria-label="Go to scene 5, OFT"><span class="dot"></span><span class="lbl">OFT</span></button>
+  <button type="button" class="rail-link" data-go="5" aria-label="Go to scene 6, after pooling"><span class="dot"></span><span class="lbl">After pooling</span></button>
+  <button type="button" class="rail-link" data-go="6" aria-label="Go to scene 7, regimes"><span class="dot"></span><span class="lbl">Regimes</span></button>
+  <button type="button" class="rail-link" data-go="7" aria-label="Go to scene 8, your design"><span class="dot"></span><span class="lbl">Design</span></button>
+  <button type="button" class="rail-link" data-go="8" aria-label="Go to scene 9, payoff"><span class="dot"></span><span class="lbl">Payoff</span></button>
+  <button type="button" class="rail-link" data-go="9" aria-label="Go to scene 10, cheat sheet"><span class="dot"></span><span class="lbl">Cheat sheet</span></button>
+</nav>
+
+<main class="stage" id="stage" aria-label="Feature caching explainer">
+
+  <!-- 00 · cover -->
+  <section class="scene active" data-scene="0" data-steps="2" aria-labelledby="t0">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>a visual note · feature caching and OFT</p>
+        <h1 id="t0">Frozen is not <em>cacheable</em></h1>
+        <p class="sub">An adapter inside a tower changes its output. That one fact decides the cost of your two-tower design.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="Two towers feeding a shared classifier; trainable rotations inside both towers invalidate a cache">
+          <g class="step" data-step="1">
+            <text x="600" y="112" text-anchor="middle" class="svg-kicker svg-faint">two towers · one classifier</text>
+            <rect x="292" y="208" width="96" height="196" rx="3" fill="rgba(88,196,221,.035)" stroke="#3A5362" stroke-width="1.8"/>
+            <rect x="492" y="208" width="96" height="196" rx="3" fill="rgba(88,196,221,.035)" stroke="#3A5362" stroke-width="1.8"/>
+            <g fill="#58C4DD" opacity=".72">
+              <rect x="300" y="222" width="80" height="9" rx="1"/><rect x="300" y="238" width="80" height="9" rx="1"/><rect x="300" y="254" width="80" height="9" rx="1"/><rect x="300" y="270" width="80" height="9" rx="1"/><rect x="300" y="286" width="80" height="9" rx="1"/><rect x="300" y="302" width="80" height="9" rx="1"/><rect x="300" y="318" width="80" height="9" rx="1"/><rect x="300" y="334" width="80" height="9" rx="1"/><rect x="300" y="350" width="80" height="9" rx="1"/><rect x="300" y="366" width="80" height="9" rx="1"/><rect x="300" y="382" width="80" height="9" rx="1"/>
+            </g>
+            <g fill="#58C4DD" opacity=".72">
+              <rect x="500" y="222" width="80" height="9" rx="1"/><rect x="500" y="238" width="80" height="9" rx="1"/><rect x="500" y="254" width="80" height="9" rx="1"/><rect x="500" y="270" width="80" height="9" rx="1"/><rect x="500" y="286" width="80" height="9" rx="1"/><rect x="500" y="302" width="80" height="9" rx="1"/><rect x="500" y="318" width="80" height="9" rx="1"/><rect x="500" y="334" width="80" height="9" rx="1"/><rect x="500" y="350" width="80" height="9" rx="1"/><rect x="500" y="366" width="80" height="9" rx="1"/><rect x="500" y="382" width="80" height="9" rx="1"/>
+            </g>
+            <text x="340" y="432" text-anchor="middle" class="svg-small svg-dim">DINOv3-B/16</text>
+            <text x="540" y="432" text-anchor="middle" class="svg-small svg-dim">SigLIP2-B/16-512</text>
+            <path d="M588 306 C 620 306, 630 306, 654 306" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M694 306 H 760" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="774" y="260" width="160" height="92" rx="3" fill="rgba(18,25,35,.45)" stroke="#3A5362" stroke-width="1.8"/>
+            <text x="854" y="296" text-anchor="middle" class="svg-label svg-ink">concat 1536</text>
+            <text x="854" y="322" text-anchor="middle" class="svg-small svg-dim">two pooled vectors</text>
+            <path d="M936 306 H 1006" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="1020" y="270" width="126" height="72" rx="3" fill="rgba(244,211,69,.05)" stroke="#7A6B2C" stroke-width="1.8"/>
+            <text x="1083" y="301" text-anchor="middle" class="svg-label svg-yellow">12476 tags</text>
+            <text x="1083" y="324" text-anchor="middle" class="svg-small svg-dim">head</text>
+            <text x="600" y="546" text-anchor="middle" class="svg-small svg-faint">the design in one line</text>
+          </g>
+          <g class="step" data-step="2">
+            <circle cx="340" cy="306" r="19" fill="rgba(154,114,172,.14)" stroke="#9A72AC" stroke-width="1.8" class="glow-p"/>
+            <text x="340" y="314" text-anchor="middle" class="svg-math svg-purple" style="font-size:24px">θ</text>
+            <circle cx="540" cy="306" r="19" fill="rgba(154,114,172,.14)" stroke="#9A72AC" stroke-width="1.8" class="glow-p"/>
+            <text x="540" y="314" text-anchor="middle" class="svg-math svg-purple" style="font-size:24px">θ</text>
+            <path d="M340 333 C 340 470, 540 470, 540 333" fill="none" stroke="#9A72AC" stroke-width="1.8" stroke-dasharray="4 6" opacity=".8"/>
+            <text x="600" y="488" text-anchor="middle" class="svg-label svg-purple">trainable rotations inside</text>
+            <path d="M600 500 V 520" fill="none" stroke="#FC6255" stroke-width="2" marker-end="url(#arR)" class="dr" pathLength="1"/>
+            <text x="600" y="556" text-anchor="middle" class="svg-label svg-red">the output moves · the cache goes stale</text>
+            <rect x="718" y="540" width="26" height="26" rx="4" fill="none" stroke="#FC6255" stroke-width="2"/>
+            <path d="M723 545 L739 561 M739 545 L723 561" stroke="#FC6255" stroke-width="2"/>
+            <text x="756" y="560" class="svg-small svg-red">no cache key</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 01 · the step -->
+  <section class="scene" data-scene="1" data-steps="4" aria-labelledby="t1">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>01 · the step</p>
+        <h2 id="t1">The step that costs everything</h2>
+        <p class="sub">Every optimizer step runs all twelve blocks again. At 130 images/s, one pass is 11.4 hours.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="A 512 image passes through twelve DINOv3 blocks, becomes 1024 tokens, a pooled vector, a linear head and 12476 tags; the forward cost is 3.53 milliseconds per image and a full training step is 7.7 milliseconds per image">
+          <defs>
+            <pattern id="tokdots" width="12" height="12" patternUnits="userSpaceOnUse">
+              <circle cx="4" cy="4" r="1.6" fill="#58C4DD" opacity=".85"/>
+            </pattern>
+          </defs>
+          <g class="step" data-step="1">
+            <rect x="44" y="240" width="108" height="108" rx="3" fill="rgba(88,196,221,.04)" stroke="#3F5565" stroke-width="1.8"/>
+            <path d="M58 330 L 84 292 L 104 312 L 118 288 L 140 330" fill="none" stroke="#58C4DD" stroke-width="1.6" opacity=".8"/>
+            <circle cx="78" cy="270" r="6" fill="none" stroke="#F4D345" stroke-width="1.6"/>
+            <text x="98" y="374" text-anchor="middle" class="svg-small svg-dim">512 × 512 squash</text>
+            <path d="M160 294 H 202" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="214" y="168" width="332" height="258" rx="3" fill="rgba(18,25,35,.32)" stroke="#354B5B" stroke-width="1.8"/>
+            <text x="228" y="198" class="svg-kicker svg-blue">DINOv3-B/16</text>
+            <g fill="#58C4DD">
+              <rect x="228" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="253" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="278" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="303" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="328" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="353" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="378" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="403" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="428" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="453" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="478" y="232" width="18" height="126" rx="1" opacity=".8"/><rect x="503" y="232" width="18" height="126" rx="1" opacity=".8"/>
+            </g>
+            <text x="380" y="382" text-anchor="middle" class="svg-small svg-dim">12 blocks · width 768 · 85.66M</text>
+            <path d="M552 294 H 600" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+          </g>
+          <g class="step" data-step="2">
+            <rect x="612" y="214" width="154" height="154" rx="3" fill="url(#tokdots)" stroke="#3F5565" stroke-width="1.8"/>
+            <text x="689" y="394" text-anchor="middle" class="svg-label svg-ink">1024 tokens</text>
+            <text x="689" y="417" text-anchor="middle" class="svg-small svg-dim">16 px patches at 512</text>
+            <path d="M774 294 H 812" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="824" y="244" width="36" height="100" rx="2" fill="rgba(88,196,221,.05)" stroke="#4E7A88" stroke-width="1.6"/>
+            <g fill="#58C4DD" opacity=".9">
+              <rect x="830" y="251" width="24" height="5" rx="1"/><rect x="830" y="262" width="24" height="5" rx="1"/><rect x="830" y="273" width="24" height="5" rx="1"/><rect x="830" y="284" width="24" height="5" rx="1"/><rect x="830" y="295" width="24" height="5" rx="1"/><rect x="830" y="306" width="24" height="5" rx="1"/><rect x="830" y="317" width="24" height="5" rx="1"/><rect x="830" y="328" width="24" height="5" rx="1"/>
+            </g>
+            <text x="842" y="374" text-anchor="middle" class="svg-small svg-dim">pool · 768-d</text>
+            <path d="M870 294 H 902" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="916" y="240" width="154" height="108" rx="3" fill="rgba(244,211,69,.04)" stroke="#6C6030" stroke-width="1.8"/>
+            <text x="993" y="284" text-anchor="middle" class="svg-label svg-ink">linear head</text>
+            <text x="993" y="309" text-anchor="middle" class="svg-small svg-dim">768 → 12476</text>
+            <path d="M1082 294 H 1112" fill="none" stroke="#F4D345" stroke-width="2" marker-end="url(#arY)" class="dr" pathLength="1"/>
+            <text x="1118" y="286" class="svg-label svg-yellow">12476</text>
+            <text x="1118" y="309" class="svg-small svg-dim">tags</text>
+          </g>
+          <g class="step" data-step="3">
+            <line x1="214" y1="454" x2="560" y2="454" stroke="#24303D" stroke-width="1.2"/>
+            <text x="228" y="486" class="svg-num svg-yellow" style="font-size:36px">3.53</text>
+            <text x="322" y="486" class="svg-small svg-dim">ms / image</text>
+            <text x="322" y="507" class="svg-small svg-faint">forward at batch 48</text>
+            <text x="456" y="486" class="svg-num svg-ink" style="font-size:36px">7.7</text>
+            <text x="520" y="486" class="svg-small svg-dim">ms / image</text>
+            <text x="520" y="507" class="svg-small svg-faint">full training step</text>
+            <text x="656" y="486" class="svg-num svg-yellow" style="font-size:36px">130</text>
+            <text x="750" y="486" class="svg-small svg-dim">images/s</text>
+            <text x="750" y="507" class="svg-small svg-faint">OFT + one unfrozen block</text>
+            <text x="1030" y="486" class="svg-num svg-ink" style="font-size:36px">11.4 h</text>
+            <text x="1030" y="507" class="svg-small svg-dim">per 5.32M-image pass</text>
+          </g>
+          <g class="step" data-step="4">
+            <path d="M1080 224 C 1080 92, 392 92, 392 158" fill="none" stroke="#F4D345" stroke-width="2.2" marker-end="url(#arY)" class="dr glow-y" pathLength="1"/>
+            <text x="736" y="84" text-anchor="middle" class="svg-label svg-yellow">again, for every optimizer step</text>
+            <text x="736" y="570" text-anchor="middle" class="svg-small svg-dim">the tower is not run once · it is run on every step</text>
+            <text x="736" y="596" text-anchor="middle" class="svg-tiny svg-faint">5.32M images ÷ 130 images/s = 11.4 hours</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 · cache -->
+  <section class="scene" data-scene="2" data-steps="4" aria-labelledby="t2">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>02 · caching</p>
+        <h2 id="t2">Cache the tower's output once</h2>
+        <p class="sub rule">A cache is valid only if the tower's output cannot change during the run.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="Run the frozen tower once over 5.32 million images, store one 768-dimensional vector per image, 8.2 gigabytes per tower, then train only the head on vectors">
+          <g class="step" data-step="1">
+            <rect x="36" y="152" width="246" height="300" rx="3" fill="rgba(18,25,35,.3)" stroke="#354B5B" stroke-width="1.8"/>
+            <text x="52" y="180" class="svg-kicker svg-blue">run once</text>
+            <g fill="#58C4DD" opacity=".75">
+              <rect x="56" y="204" width="206" height="11" rx="1"/><rect x="56" y="222" width="206" height="11" rx="1"/><rect x="56" y="240" width="206" height="11" rx="1"/><rect x="56" y="258" width="206" height="11" rx="1"/><rect x="56" y="276" width="206" height="11" rx="1"/><rect x="56" y="294" width="206" height="11" rx="1"/><rect x="56" y="312" width="206" height="11" rx="1"/><rect x="56" y="330" width="206" height="11" rx="1"/><rect x="56" y="348" width="206" height="11" rx="1"/><rect x="56" y="366" width="206" height="11" rx="1"/><rect x="56" y="384" width="206" height="11" rx="1"/><rect x="56" y="402" width="206" height="11" rx="1"/>
+            </g>
+            <text x="159" y="438" text-anchor="middle" class="svg-small svg-dim">frozen tower</text>
+            <path d="M296 302 H 338" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+          </g>
+          <g class="step" data-step="2">
+            <text x="354" y="132" class="svg-label svg-ink">5.32M images × 768 dims</text>
+            <rect x="362" y="166" width="294" height="272" rx="2" fill="rgba(88,196,221,.02)" stroke="#3F5565" stroke-width="1.6"/>
+            <g fill="#58C4DD">
+              <rect x="372" y="176" width="276" height="7" opacity=".4"/><rect x="372" y="191" width="276" height="7" opacity=".46"/><rect x="372" y="206" width="276" height="7" opacity=".52"/><rect x="372" y="221" width="276" height="7" opacity=".58"/><rect x="372" y="236" width="276" height="7" opacity=".64"/><rect x="372" y="251" width="276" height="7" opacity=".7"/><rect x="372" y="266" width="276" height="7" opacity=".76"/><rect x="372" y="281" width="276" height="7" opacity=".82"/><rect x="372" y="296" width="276" height="7" opacity=".88"/><rect x="372" y="311" width="276" height="7" opacity=".94"/><rect x="372" y="326" width="276" height="7" opacity="1"/><rect x="372" y="341" width="276" height="7" opacity=".94"/><rect x="372" y="356" width="276" height="7" opacity=".88"/><rect x="372" y="371" width="276" height="7" opacity=".82"/><rect x="372" y="386" width="276" height="7" opacity=".76"/><rect x="372" y="401" width="276" height="7" opacity=".7"/><rect x="372" y="416" width="276" height="7" opacity=".64"/>
+            </g>
+            <text x="366" y="462" class="svg-small svg-dim">one pooled vector per image</text>
+            <text x="666" y="184" class="svg-small svg-faint">bf16</text>
+            <text x="666" y="205" class="svg-small svg-faint">2 bytes</text>
+            <text x="666" y="226" class="svg-small svg-faint">per value</text>
+            <path d="M662 302 H 700" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+          </g>
+          <g class="step" data-step="3">
+            <text x="724" y="192" class="svg-kicker svg-faint">one tower</text>
+            <text x="724" y="238" class="svg-math svg-ink" style="font-size:27px">5.32M × 768 × 2 B</text>
+            <text x="724" y="296" class="svg-num svg-yellow" style="font-size:46px">8.2 GB</text>
+            <text x="884" y="294" class="svg-small svg-dim">per tower</text>
+            <line x1="724" y1="322" x2="1120" y2="322" stroke="#24303D" stroke-width="1.2"/>
+            <text x="724" y="356" class="svg-kicker svg-faint">both towers</text>
+            <text x="724" y="402" class="svg-num svg-ink" style="font-size:40px">16.3 GB</text>
+            <text x="724" y="438" class="svg-small svg-dim">cache fill: 5.2 h per tower · 10.4 h both</text>
+            <path d="M640 474 C 700 474, 706 474, 742 474" fill="none" stroke="#83C167" stroke-width="2" marker-end="url(#arG)" class="dr" pathLength="1"/>
+            <rect x="756" y="432" width="196" height="88" rx="3" fill="rgba(131,193,103,.05)" stroke="#4F6B45" stroke-width="1.8"/>
+            <text x="854" y="465" text-anchor="middle" class="svg-label svg-green">train on vectors</text>
+            <text x="854" y="491" text-anchor="middle" class="svg-small svg-dim">head only · no tower</text>
+          </g>
+          <g class="step" data-step="4">
+            <text x="1110" y="465" text-anchor="end" class="svg-small svg-green">cache hit</text>
+            <text x="1110" y="491" text-anchor="end" class="svg-tiny svg-faint">for every epoch</text>
+            <rect x="760" y="540" width="336" height="56" rx="3" fill="rgba(131,193,103,.035)" stroke="#4F6B45" stroke-width="1.4"/>
+            <text x="928" y="563" text-anchor="middle" class="svg-small svg-green">f(x) constant → one vector is enough</text>
+            <text x="928" y="583" text-anchor="middle" class="svg-tiny svg-faint">the cost is paid once, not per step</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 · break -->
+  <section class="scene" data-scene="3" data-steps="4" aria-labelledby="t3">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>03 · the break</p>
+        <h2 id="t3">Frozen is not the condition</h2>
+        <p class="sub">A trainable rotation inside the tower changes the output. The stored vector becomes a stale answer.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="A trainable theta inside a frozen block rotates after an optimizer step, so the cached vector from step zero no longer equals the tower output at step k">
+          <g class="step" data-step="1">
+            <text x="82" y="120" class="svg-kicker svg-faint">step 0</text>
+            <text x="82" y="154" class="svg-math svg-ink" style="font-size:30px">f(x; θ₀) = v₀</text>
+            <rect x="72" y="188" width="282" height="300" rx="3" fill="rgba(18,25,35,.28)" stroke="#354B5B" stroke-width="1.8"/>
+            <g fill="rgba(88,196,221,.2)" stroke="#3B5666" stroke-width="1">
+              <rect x="92" y="206" width="242" height="18" rx="1"/><rect x="92" y="230" width="242" height="18" rx="1"/><rect x="92" y="254" width="242" height="18" rx="1"/><rect x="92" y="278" width="242" height="18" rx="1"/><rect x="92" y="302" width="242" height="18" rx="1"/><rect x="92" y="326" width="242" height="18" rx="1"/><rect x="92" y="350" width="242" height="18" rx="1"/><rect x="92" y="374" width="242" height="18" rx="1"/><rect x="92" y="398" width="242" height="18" rx="1"/><rect x="92" y="422" width="242" height="18" rx="1"/><rect x="92" y="446" width="242" height="18" rx="1"/>
+            </g>
+            <rect x="92" y="350" width="242" height="18" rx="1" fill="rgba(154,114,172,.35)" stroke="#9A72AC" stroke-width="2"/>
+            <text x="120" y="365" class="svg-math svg-purple" style="font-size:18px">θ₀</text>
+            <path d="M356 292 C 486 292, 548 250, 698 250" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <text x="534" y="234" text-anchor="middle" class="svg-small svg-dim">store once</text>
+            <rect x="710" y="178" width="246" height="148" rx="3" fill="rgba(88,196,221,.035)" stroke="#3F5565" stroke-width="1.8"/>
+            <text x="728" y="206" class="svg-kicker svg-blue">cached vector</text>
+            <g fill="#58C4DD" opacity=".85">
+              <rect x="730" y="226" width="22" height="6" rx="1"/><rect x="730" y="239" width="34" height="6" rx="1"/><rect x="730" y="252" width="18" height="6" rx="1"/><rect x="730" y="265" width="38" height="6" rx="1"/><rect x="730" y="278" width="26" height="6" rx="1"/><rect x="730" y="291" width="31" height="6" rx="1"/>
+            </g>
+            <text x="918" y="272" text-anchor="end" class="svg-math svg-blue" style="font-size:28px">v₀</text>
+            <text x="728" y="312" class="svg-small svg-faint">written at step 0</text>
+          </g>
+          <g class="step" data-step="2">
+            <circle cx="132" cy="359" r="36" fill="rgba(154,114,172,.09)" stroke="#9A72AC" stroke-width="1.8"/>
+            <g class="needle">
+              <line x1="132" y1="359" x2="132" y2="335" stroke="#F4D345" stroke-width="2.2" stroke-linecap="round"/>
+            </g>
+            <circle cx="132" cy="359" r="3" fill="#F4D345"/>
+            <path d="M178 359 A 46 46 0 0 1 168 389" fill="none" stroke="#F4D345" stroke-width="1.8" marker-end="url(#arY)" class="dr" pathLength="1"/>
+            <text x="400" y="342" class="svg-label svg-purple">optimizer step</text>
+            <text x="400" y="369" class="svg-math svg-purple" style="font-size:26px">θ₀ → θ₁</text>
+            <text x="400" y="399" class="svg-small svg-faint">the frozen weights did not move</text>
+            <text x="400" y="423" class="svg-small svg-faint">the rotation inside did</text>
+          </g>
+          <g class="step" data-step="3">
+            <text x="82" y="530" class="svg-kicker svg-faint">step k</text>
+            <text x="82" y="562" class="svg-math svg-ink" style="font-size:28px">f(x; θ₁) = v₁</text>
+            <rect x="710" y="360" width="246" height="148" rx="3" fill="rgba(252,98,85,.035)" stroke="#7D403B" stroke-width="1.8"/>
+            <text x="728" y="388" class="svg-kicker svg-red">tower now returns</text>
+            <g fill="#FC6255" opacity=".9">
+              <rect x="730" y="408" width="30" height="6" rx="1"/><rect x="730" y="421" width="18" height="6" rx="1"/><rect x="730" y="434" width="40" height="6" rx="1"/><rect x="730" y="447" width="24" height="6" rx="1"/><rect x="730" y="460" width="35" height="6" rx="1"/><rect x="730" y="473" width="21" height="6" rx="1"/>
+            </g>
+            <text x="918" y="454" text-anchor="end" class="svg-math svg-red" style="font-size:28px">v₁</text>
+            <text x="728" y="497" class="svg-small svg-faint">same image · new output</text>
+            <path d="M962 306 V 374" fill="none" stroke="#FC6255" stroke-width="2" marker-end="url(#arR)" class="dr" pathLength="1"/>
+            <text x="982" y="342" class="svg-math svg-red" style="font-size:42px">≠</text>
+            <text x="1024" y="334" class="svg-small svg-red">v₀ ≠ v₁</text>
+            <text x="1024" y="357" class="svg-tiny svg-faint">a cache hit would be wrong</text>
+            <path d="M360 359 C 480 359, 540 430, 700 430" fill="none" stroke="#FC6255" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arR)" opacity=".85"/>
+          </g>
+          <g class="step" data-step="4">
+            <rect x="72" y="586" width="1056" height="42" rx="2" fill="rgba(244,211,69,.035)" stroke="#5A5128" stroke-width="1.2"/>
+            <text x="600" y="613" text-anchor="middle" class="svg-label svg-yellow">Frozen alone is not the condition; frozen with nothing trainable inside is.</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 · OFT -->
+  <section class="scene" data-scene="4" data-steps="4" aria-labelledby="t4">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>04 · OFT</p>
+        <h2 id="t4">What OFT actually is</h2>
+        <p class="sub">A learned orthogonal rotation inside the tower, block-diagonal at 128 rows, stored as a small skew matrix.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="OFT builds a block-diagonal rotation with 128 by 128 blocks: 8128 parameters per block, 48768 per 768-wide module, 195072 for the 3072-wide down projection, 438912 per transformer block and 5315712 per tower">
+          <defs>
+            <pattern id="grid6" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M24 0 H0 V24" fill="none" stroke="#293744" stroke-width="1"/>
+            </pattern>
+            <pattern id="grid24" width="9" height="9" patternUnits="userSpaceOnUse">
+              <path d="M9 0 H0 V9" fill="none" stroke="#293744" stroke-width=".65"/>
+            </pattern>
+          </defs>
+          <g class="step" data-step="1">
+            <text x="40" y="84" class="svg-math svg-yellow glow-y" style="font-size:35px">R = (I + Q)(I − Q)⁻¹</text>
+            <text x="40" y="112" class="svg-small svg-dim">Q skew-symmetric · a rotation by construction</text>
+            <text x="40" y="164" class="svg-kicker svg-faint">one 768-wide module</text>
+            <g stroke="#4E7A88" stroke-width="1.6" fill="rgba(88,196,221,.06)">
+              <rect x="40" y="180" width="50" height="30"/><rect x="90" y="180" width="50" height="30"/><rect x="140" y="180" width="50" height="30"/><rect x="190" y="180" width="50" height="30"/><rect x="240" y="180" width="50" height="30"/><rect x="290" y="180" width="50" height="30"/>
+            </g>
+            <g fill="#9A72AC" font-size="12" text-anchor="middle" class="svg-mono">
+              <text x="65" y="200" fill="#9A72AC">128</text><text x="115" y="200" fill="#9A72AC">128</text><text x="165" y="200" fill="#9A72AC">128</text><text x="215" y="200" fill="#9A72AC">128</text><text x="265" y="200" fill="#9A72AC">128</text><text x="315" y="200" fill="#9A72AC">128</text>
+            </g>
+            <text x="356" y="202" class="svg-small svg-dim">6 blocks</text>
+            <rect x="40" y="238" width="144" height="144" fill="url(#grid6)" stroke="#3A4A5B" stroke-width="1.4"/>
+            <g fill="rgba(154,114,172,.45)" stroke="#9A72AC" stroke-width="1.5">
+              <rect x="40" y="238" width="24" height="24"/><rect x="64" y="262" width="24" height="24"/><rect x="88" y="286" width="24" height="24"/><rect x="112" y="310" width="24" height="24"/><rect x="136" y="334" width="24" height="24"/><rect x="160" y="358" width="24" height="24"/>
+            </g>
+            <text x="204" y="294" class="svg-small svg-purple">block diagonal</text>
+            <text x="204" y="318" class="svg-small svg-dim">no mixing across groups</text>
+            <text x="204" y="352" class="svg-mono svg-yellow" style="font-size:18px">128 × 127 / 2 = 8128</text>
+            <text x="204" y="376" class="svg-small svg-faint">free θ values per block</text>
+          </g>
+          <g class="step" data-step="2">
+            <text x="380" y="164" class="svg-kicker svg-faint">the 3072-wide mlp.down</text>
+            <g stroke="#4E7A88" stroke-width="1.2" fill="rgba(88,196,221,.06)">
+              <rect x="380" y="180" width="12.5" height="30"/><rect x="392.5" y="180" width="12.5" height="30"/><rect x="405" y="180" width="12.5" height="30"/><rect x="417.5" y="180" width="12.5" height="30"/><rect x="430" y="180" width="12.5" height="30"/><rect x="442.5" y="180" width="12.5" height="30"/><rect x="455" y="180" width="12.5" height="30"/><rect x="467.5" y="180" width="12.5" height="30"/><rect x="480" y="180" width="12.5" height="30"/><rect x="492.5" y="180" width="12.5" height="30"/><rect x="505" y="180" width="12.5" height="30"/><rect x="517.5" y="180" width="12.5" height="30"/><rect x="530" y="180" width="12.5" height="30"/><rect x="542.5" y="180" width="12.5" height="30"/><rect x="555" y="180" width="12.5" height="30"/><rect x="567.5" y="180" width="12.5" height="30"/><rect x="580" y="180" width="12.5" height="30"/><rect x="592.5" y="180" width="12.5" height="30"/><rect x="605" y="180" width="12.5" height="30"/><rect x="617.5" y="180" width="12.5" height="30"/><rect x="630" y="180" width="12.5" height="30"/><rect x="642.5" y="180" width="12.5" height="30"/><rect x="655" y="180" width="12.5" height="30"/><rect x="667.5" y="180" width="12.5" height="30"/>
+            </g>
+            <text x="696" y="200" class="svg-small svg-dim">24 blocks</text>
+            <rect x="380" y="238" width="216" height="216" fill="url(#grid24)" stroke="#3A4A5B" stroke-width="1.4"/>
+            <g fill="rgba(154,114,172,.47)" stroke="#9A72AC" stroke-width=".8">
+              <rect x="380" y="238" width="9" height="9"/><rect x="389" y="247" width="9" height="9"/><rect x="398" y="256" width="9" height="9"/><rect x="407" y="265" width="9" height="9"/><rect x="416" y="274" width="9" height="9"/><rect x="425" y="283" width="9" height="9"/><rect x="434" y="292" width="9" height="9"/><rect x="443" y="301" width="9" height="9"/><rect x="452" y="310" width="9" height="9"/><rect x="461" y="319" width="9" height="9"/><rect x="470" y="328" width="9" height="9"/><rect x="479" y="337" width="9" height="9"/><rect x="488" y="346" width="9" height="9"/><rect x="497" y="355" width="9" height="9"/><rect x="506" y="364" width="9" height="9"/><rect x="515" y="373" width="9" height="9"/><rect x="524" y="382" width="9" height="9"/><rect x="533" y="391" width="9" height="9"/><rect x="542" y="400" width="9" height="9"/><rect x="551" y="409" width="9" height="9"/><rect x="560" y="418" width="9" height="9"/><rect x="569" y="427" width="9" height="9"/><rect x="578" y="436" width="9" height="9"/><rect x="587" y="445" width="9" height="9"/>
+            </g>
+            <text x="616" y="306" class="svg-small svg-purple">24 blocks</text>
+            <text x="616" y="330" class="svg-small svg-dim">one per 128 rows</text>
+            <text x="616" y="366" class="svg-mono svg-yellow" style="font-size:17px">24 × 8128</text>
+            <text x="616" y="390" class="svg-mono svg-yellow" style="font-size:22px">= 195072</text>
+          </g>
+          <g class="step" data-step="3">
+            <text x="40" y="514" class="svg-mono svg-ink" style="font-size:22px">4 × 768 + 768 + 3072</text>
+            <text x="40" y="545" class="svg-small svg-dim">q, k, v, o · mlp.up · mlp.down</text>
+            <text x="40" y="583" class="svg-mono svg-yellow" style="font-size:22px">54 × 8128 = 438912</text>
+            <text x="40" y="608" class="svg-small svg-faint">per transformer block</text>
+          </g>
+          <g class="step" data-step="4">
+            <text x="380" y="514" class="svg-mono svg-ink" style="font-size:21px">73 modules · 654 blocks</text>
+            <text x="380" y="543" class="svg-small svg-dim">including the patch-embedding rotation</text>
+            <text x="380" y="583" class="svg-mono svg-yellow glow-y" style="font-size:28px">= 5315712</text>
+            <text x="380" y="608" class="svg-small svg-faint">whole ViT-B tower</text>
+            <text x="760" y="600" class="svg-small svg-red">inside the tower → cache invalid</text>
+          </g>
+          <g class="step" data-step="1">
+            <text x="760" y="146" class="svg-kicker svg-faint">the cascade</text>
+          </g>
+          <g class="step" data-step="1">
+            <text x="920" y="194" text-anchor="end" class="svg-num svg-yellow" style="font-size:34px">8128</text>
+            <text x="942" y="194" class="svg-small svg-dim">θ per 128-row block</text>
+            <text x="920" y="270" text-anchor="end" class="svg-num svg-ink" style="font-size:34px">48768</text>
+            <text x="942" y="270" class="svg-small svg-dim">one 768-wide module · ×6</text>
+            <text x="920" y="382" text-anchor="end" class="svg-small svg-faint">the cascade continues</text>
+          </g>
+          <g class="step" data-step="2">
+            <text x="920" y="350" text-anchor="end" class="svg-num svg-ink" style="font-size:34px">195072</text>
+            <text x="942" y="350" class="svg-small svg-dim">one 3072-wide module · ×24</text>
+          </g>
+          <g class="step" data-step="3">
+            <text x="920" y="442" text-anchor="end" class="svg-num svg-ink" style="font-size:34px">438912</text>
+            <text x="942" y="442" class="svg-small svg-dim">one transformer block · ×54</text>
+          </g>
+          <g class="step" data-step="4">
+            <text x="920" y="522" text-anchor="end" class="svg-num svg-yellow" style="font-size:36px">5315712</text>
+            <text x="942" y="522" class="svg-small svg-dim">the whole tower</text>
+            <line x1="760" y1="484" x2="760" y2="550" stroke="#5A5128" stroke-width="1.2"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 · after pooling -->
+  <section class="scene" data-scene="5" data-steps="4" aria-labelledby="t5">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>05 · after pooling</p>
+        <h2 id="t5">A rotation after pooling is absorbable</h2>
+        <p class="sub"><span class="svg-math">W(Rx) = (WR)x</span>. Still one linear map; the classifier could learn it without orthogonality.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="A rotation applied after pooling is absorbed into the classifier weight, while a rotation on tokens before attention changes queries, keys, values and the attention pattern">
+          <g class="step" data-step="1">
+            <text x="70" y="92" class="svg-kicker svg-faint">after pooling</text>
+            <rect x="62" y="132" width="32" height="82" rx="2" fill="rgba(88,196,221,.05)" stroke="#4E7A88" stroke-width="1.6"/>
+            <g fill="#58C4DD" opacity=".88">
+              <rect x="68" y="140" width="20" height="5" rx="1"/><rect x="68" y="152" width="20" height="5" rx="1"/><rect x="68" y="164" width="20" height="5" rx="1"/><rect x="68" y="176" width="20" height="5" rx="1"/><rect x="68" y="188" width="20" height="5" rx="1"/><rect x="68" y="200" width="20" height="5" rx="1"/>
+            </g>
+            <text x="78" y="244" text-anchor="middle" class="svg-math svg-blue" style="font-size:28px">x</text>
+            <path d="M104 172 H 144" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="158" y="132" width="82" height="82" rx="3" fill="rgba(154,114,172,.07)" stroke="#7A5B8A" stroke-width="1.8"/>
+            <text x="199" y="183" text-anchor="middle" class="svg-math svg-purple" style="font-size:34px">R</text>
+            <path d="M250 172 H 290" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="304" y="132" width="82" height="82" rx="3" fill="rgba(88,196,221,.05)" stroke="#3F5565" stroke-width="1.8"/>
+            <text x="345" y="183" text-anchor="middle" class="svg-math svg-blue" style="font-size:34px">W</text>
+            <path d="M396 172 H 442" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <text x="466" y="181" class="svg-label svg-dim">logits</text>
+            <text x="560" y="181" class="svg-small svg-faint">only the pooled vector is touched</text>
+          </g>
+          <g class="step past" data-step="1" data-hide-at="2">
+            <!-- dimmed by the absorption step -->
+          </g>
+          <g class="step" data-step="2">
+            <path d="M199 218 C 199 252, 300 252, 348 278" fill="none" stroke="#9A72AC" stroke-width="2" marker-end="url(#arP)" class="dr" pathLength="1"/>
+            <path d="M345 218 C 345 250, 348 258, 368 278" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <circle cx="372" cy="284" r="4" fill="#F4D345"/>
+            <path d="M380 284 H 430" fill="none" stroke="#F4D345" stroke-width="2.2" marker-end="url(#arY)" class="dr" pathLength="1"/>
+            <rect x="444" y="244" width="108" height="80" rx="3" fill="rgba(244,211,69,.05)" stroke="#6C6030" stroke-width="1.8"/>
+            <text x="498" y="293" text-anchor="middle" class="svg-math svg-yellow" style="font-size:32px">WR</text>
+            <text x="572" y="258" class="svg-math svg-yellow" style="font-size:34px">W(Rx) = (WR)x</text>
+            <text x="572" y="292" class="svg-small svg-dim">one linear map</text>
+            <text x="572" y="316" class="svg-small svg-faint">the orthogonality constraint disappears</text>
+            <text x="572" y="351" class="svg-small svg-red">not an adapter · just a weight the head can learn</text>
+          </g>
+          <g class="step" data-step="3">
+            <line x1="54" y1="386" x2="1146" y2="386" stroke="#24303D" stroke-width="1.2"/>
+            <text x="62" y="426" class="svg-kicker svg-faint">inside the tower · before attention</text>
+            <g fill="#58C4DD" opacity=".9">
+              <circle cx="76" cy="488" r="5"/><circle cx="104" cy="488" r="5"/><circle cx="132" cy="488" r="5"/><circle cx="160" cy="488" r="5"/><circle cx="188" cy="488" r="5"/><circle cx="216" cy="488" r="5"/>
+            </g>
+            <text x="146" y="520" text-anchor="middle" class="svg-small svg-dim">1024 tokens</text>
+            <path d="M240 488 H 286" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="300" y="444" width="92" height="92" rx="3" fill="rgba(154,114,172,.08)" stroke="#7A5B8A" stroke-width="1.8"/>
+            <text x="346" y="501" text-anchor="middle" class="svg-math svg-purple" style="font-size:36px">R</text>
+            <path d="M404 486 C 436 486, 436 438, 472 438" fill="none" stroke="#9A72AC" stroke-width="1.8" marker-end="url(#arP)" class="dr" pathLength="1"/>
+            <path d="M404 488 H 472" fill="none" stroke="#9A72AC" stroke-width="1.8" marker-end="url(#arP)" class="dr" pathLength="1"/>
+            <path d="M404 490 C 436 490, 436 538, 472 538" fill="none" stroke="#9A72AC" stroke-width="1.8" marker-end="url(#arP)" class="dr" pathLength="1"/>
+            <g fill="rgba(88,196,221,.06)" stroke="#4E7A88" stroke-width="1.5">
+              <rect x="486" y="418" width="94" height="38" rx="2"/><rect x="486" y="469" width="94" height="38" rx="2"/><rect x="486" y="520" width="94" height="38" rx="2"/>
+            </g>
+            <text x="533" y="443" text-anchor="middle" class="svg-label svg-blue">Q</text>
+            <text x="533" y="494" text-anchor="middle" class="svg-label svg-blue">K</text>
+            <text x="533" y="545" text-anchor="middle" class="svg-label svg-blue">V</text>
+            <text x="602" y="443" class="svg-small svg-dim">Q = R Wq x</text>
+            <text x="602" y="494" class="svg-small svg-dim">K = R Wk x</text>
+            <text x="602" y="545" class="svg-small svg-dim">V = R Wv x</text>
+            <path d="M700 443 C 748 443, 748 468, 790 468" fill="none" stroke="#58C4DD" stroke-width="1.6" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M700 494 H 790" fill="none" stroke="#58C4DD" stroke-width="1.6" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M700 545 C 748 545, 748 520, 790 520" fill="none" stroke="#58C4DD" stroke-width="1.6" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="804" y="440" width="156" height="102" rx="3" fill="rgba(88,196,221,.04)" stroke="#3F5565" stroke-width="1.8"/>
+            <text x="882" y="480" text-anchor="middle" class="svg-label svg-ink">attention</text>
+            <text x="882" y="505" text-anchor="middle" class="svg-small svg-dim">sees Q, K, V</text>
+          </g>
+          <g class="step" data-step="4">
+            <path d="M846 432 C 826 386, 870 392, 850 432" fill="none" stroke="#F4D345" stroke-width="1.6" opacity=".85"/>
+            <path d="M900 432 C 930 386, 884 392, 906 432" fill="none" stroke="#F4D345" stroke-width="1.6" opacity=".85"/>
+            <text x="1000" y="472" class="svg-small svg-yellow">the attention pattern changes</text>
+            <text x="1000" y="497" class="svg-small svg-dim">R is inside · not absorbable</text>
+            <text x="1000" y="521" class="svg-small svg-red">and the cache cannot hide it</text>
+            <text x="62" y="602" class="svg-small svg-faint">R before attention changes what each token looks at; R after pooling is only a different linear head.</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 · regimes -->
+  <section class="scene" data-scene="6" data-steps="4" aria-labelledby="t6">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>06 · three regimes</p>
+        <h2 id="t6">Three regimes, three prices</h2>
+        <p class="sub">Only A is cacheable. B and C still walk backward through frozen blocks to reach their rotations.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="Three regimes side by side: both towers frozen and cached at 16.3 gigabytes and minutes per pass; OFT in both towers at 55 to 65 images per second and 23 to 27 hours per pass; OFT plus one unfrozen block in each tower at 43.1 million trainable parameters and the same 23 to 27 hours">
+          <g class="step" data-step="1">
+            <line x1="402" y1="64" x2="402" y2="458" stroke="#24303D" stroke-width="1.2"/>
+            <line x1="810" y1="64" x2="810" y2="458" stroke="#24303D" stroke-width="1.2"/>
+            <text x="76" y="84" class="svg-kicker svg-green">A · cache both</text>
+            <text x="456" y="84" class="svg-kicker svg-purple">B · OFT both</text>
+            <text x="864" y="84" class="svg-kicker svg-yellow">C · your choice</text>
+          </g>
+          <g class="step" data-step="2">
+            <g stroke="#3B5666" stroke-width="1.6" fill="rgba(88,196,221,.035)">
+              <rect x="78" y="132" width="112" height="178" rx="2"/><rect x="206" y="132" width="112" height="178" rx="2"/>
+            </g>
+            <g fill="#58C4DD" opacity=".62">
+              <rect x="90" y="148" width="88" height="8"/><rect x="90" y="164" width="88" height="8"/><rect x="90" y="180" width="88" height="8"/><rect x="90" y="196" width="88" height="8"/><rect x="90" y="212" width="88" height="8"/><rect x="90" y="228" width="88" height="8"/><rect x="90" y="244" width="88" height="8"/><rect x="90" y="260" width="88" height="8"/><rect x="90" y="276" width="88" height="8"/><rect x="90" y="292" width="88" height="8"/>
+              <rect x="218" y="148" width="88" height="8"/><rect x="218" y="164" width="88" height="8"/><rect x="218" y="180" width="88" height="8"/><rect x="218" y="196" width="88" height="8"/><rect x="218" y="212" width="88" height="8"/><rect x="218" y="228" width="88" height="8"/><rect x="218" y="244" width="88" height="8"/><rect x="218" y="260" width="88" height="8"/><rect x="218" y="276" width="88" height="8"/><rect x="218" y="292" width="88" height="8"/>
+            </g>
+            <text x="198" y="336" text-anchor="middle" class="svg-small svg-dim">frozen weights · no adapter inside</text>
+            <rect x="98" y="360" width="200" height="56" rx="3" fill="rgba(131,193,103,.04)" stroke="#4F6B45" stroke-width="1.6"/>
+            <text x="198" y="383" text-anchor="middle" class="svg-small svg-green">cache both · 16.3 GB</text>
+            <text x="198" y="404" text-anchor="middle" class="svg-tiny svg-faint">minutes per pass after one fill</text>
+            <text x="76" y="442" class="svg-small svg-dim">no representation change · head only</text>
+          </g>
+          <g class="step" data-step="3">
+            <g stroke="#4A4A66" stroke-width="1.6" fill="rgba(154,114,172,.035)">
+              <rect x="458" y="132" width="112" height="178" rx="2"/><rect x="586" y="132" width="112" height="178" rx="2"/>
+            </g>
+            <g fill="#9A72AC" opacity=".48">
+              <rect x="470" y="148" width="88" height="8"/><rect x="470" y="164" width="88" height="8"/><rect x="470" y="180" width="88" height="8"/><rect x="470" y="196" width="88" height="8"/><rect x="470" y="212" width="88" height="8"/><rect x="470" y="228" width="88" height="8"/><rect x="470" y="244" width="88" height="8"/><rect x="470" y="260" width="88" height="8"/><rect x="470" y="276" width="88" height="8"/><rect x="470" y="292" width="88" height="8"/>
+              <rect x="598" y="148" width="88" height="8"/><rect x="598" y="164" width="88" height="8"/><rect x="598" y="180" width="88" height="8"/><rect x="598" y="196" width="88" height="8"/><rect x="598" y="212" width="88" height="8"/><rect x="598" y="228" width="88" height="8"/><rect x="598" y="244" width="88" height="8"/><rect x="598" y="260" width="88" height="8"/><rect x="598" y="276" width="88" height="8"/><rect x="598" y="292" width="88" height="8"/>
+            </g>
+            <g fill="#9A72AC" opacity=".95">
+              <circle cx="482" cy="221" r="4"/><circle cx="522" cy="221" r="4"/><circle cx="562" cy="221" r="4"/><circle cx="610" cy="221" r="4"/><circle cx="650" cy="221" r="4"/><circle cx="690" cy="221" r="4"/>
+            </g>
+            <text x="578" y="336" text-anchor="middle" class="svg-small svg-purple">OFT in both · 24 blocks adapt</text>
+            <rect x="432" y="360" width="292" height="56" rx="3" fill="rgba(252,98,85,.03)" stroke="#6B3B38" stroke-width="1.6"/>
+            <text x="578" y="383" text-anchor="middle" class="svg-small svg-red">no cache · 55–65 images/s</text>
+            <text x="578" y="404" text-anchor="middle" class="svg-tiny svg-faint">29.81M live · backward to every rotation</text>
+            <text x="456" y="442" class="svg-small svg-dim">the tower output moves after every step</text>
+          </g>
+          <g class="step" data-step="4">
+            <g stroke="#5C5430" stroke-width="1.6" fill="rgba(244,211,69,.035)">
+              <rect x="866" y="132" width="112" height="178" rx="2"/><rect x="994" y="132" width="112" height="178" rx="2"/>
+            </g>
+            <g fill="#F4D345" opacity=".34">
+              <rect x="878" y="148" width="88" height="8"/><rect x="878" y="164" width="88" height="8"/><rect x="878" y="180" width="88" height="8"/><rect x="878" y="196" width="88" height="8"/><rect x="878" y="212" width="88" height="8"/><rect x="878" y="228" width="88" height="8"/><rect x="878" y="244" width="88" height="8"/><rect x="878" y="260" width="88" height="8"/><rect x="878" y="276" width="88" height="8"/><rect x="878" y="292" width="88" height="8"/>
+              <rect x="1006" y="148" width="88" height="8"/><rect x="1006" y="164" width="88" height="8"/><rect x="1006" y="180" width="88" height="8"/><rect x="1006" y="196" width="88" height="8"/><rect x="1006" y="212" width="88" height="8"/><rect x="1006" y="228" width="88" height="8"/><rect x="1006" y="244" width="88" height="8"/><rect x="1006" y="260" width="88" height="8"/><rect x="1006" y="276" width="88" height="8"/><rect x="1006" y="292" width="88" height="8"/>
+            </g>
+            <g fill="#9A72AC" opacity=".9">
+              <circle cx="890" cy="221" r="4"/><circle cx="930" cy="221" r="4"/><circle cx="970" cy="221" r="4"/><circle cx="1018" cy="221" r="4"/><circle cx="1058" cy="221" r="4"/><circle cx="1098" cy="221" r="4"/>
+            </g>
+            <rect x="888" y="276" width="88" height="12" rx="1" fill="rgba(244,211,69,.5)" stroke="#F4D345" stroke-width="1.8"/>
+            <rect x="1016" y="276" width="88" height="12" rx="1" fill="rgba(244,211,69,.5)" stroke="#F4D345" stroke-width="1.8"/>
+            <text x="986" y="336" text-anchor="middle" class="svg-small svg-yellow">OFT + last block unfrozen</text>
+            <rect x="852" y="360" width="292" height="56" rx="3" fill="rgba(252,98,85,.03)" stroke="#6B3B38" stroke-width="1.6"/>
+            <text x="998" y="383" text-anchor="middle" class="svg-small svg-red">no cache · 55–65 images/s</text>
+            <text x="998" y="404" text-anchor="middle" class="svg-tiny svg-faint">43.1M live · 23–27 h per pass</text>
+            <text x="864" y="442" class="svg-small svg-dim">more capacity, same cache verdict</text>
+          </g>
+          <g class="step" data-step="4">
+            <text x="76" y="528" class="svg-kicker svg-faint">cost per full 5.32M pass</text>
+            <text x="198" y="554" text-anchor="middle" class="svg-tiny svg-green">minutes</text>
+            <rect x="78" y="566" width="20" height="8" rx="2" fill="#83C167"/>
+            <text x="578" y="554" text-anchor="middle" class="svg-tiny svg-red">23–27 h</text>
+            <rect x="432" y="566" width="270" height="8" rx="2" fill="rgba(252,98,85,.72)"/>
+            <text x="998" y="554" text-anchor="middle" class="svg-tiny svg-yellow">23–27 h</text>
+            <rect x="852" y="566" width="270" height="8" rx="2" fill="rgba(244,211,69,.72)"/>
+            <text x="600" y="610" text-anchor="middle" class="svg-small svg-red">B and C retain both towers' activations: about 31 GB at batch 48, against a 24.5 GB card → batch 24–32</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 · design -->
+  <section class="scene" data-scene="7" data-steps="4" aria-labelledby="t7">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>07 · the design</p>
+        <h2 id="t7">Your design, end to end</h2>
+        <p class="sub">One 512 image, two normalisations, 24 blocks, two rotations and two unfrozen blocks, one 1536-d head.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="Data flow for the chosen design: one 512 image is normalised twice, passes through two twelve-block towers with OFT and an unfrozen last block each, pools to two 768 vectors, concatenates to 1536, and feeds a 19.18 million parameter head">
+          <g class="step" data-step="1">
+            <rect x="28" y="246" width="86" height="86" rx="3" fill="rgba(88,196,221,.04)" stroke="#3F5565" stroke-width="1.8"/>
+            <path d="M42 318 L 62 290 L 78 306 L 90 286 L 104 318" fill="none" stroke="#58C4DD" stroke-width="1.5" opacity=".8"/>
+            <circle cx="54" cy="268" r="5" fill="none" stroke="#F4D345" stroke-width="1.5"/>
+            <text x="71" y="356" text-anchor="middle" class="svg-small svg-dim">512² squash</text>
+            <path d="M118 288 C 136 288, 136 234, 156 234" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M118 290 C 136 290, 136 394, 156 394" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="168" y="207" width="112" height="54" rx="2" fill="rgba(88,196,221,.04)" stroke="#3F5565" stroke-width="1.6"/>
+            <text x="224" y="230" text-anchor="middle" class="svg-small svg-ink">DINOv3 norm</text>
+            <text x="224" y="248" text-anchor="middle" class="svg-tiny svg-faint">mean · std</text>
+            <rect x="168" y="367" width="112" height="54" rx="2" fill="rgba(88,196,221,.04)" stroke="#3F5565" stroke-width="1.6"/>
+            <text x="224" y="390" text-anchor="middle" class="svg-small svg-ink">SigLIP2 norm</text>
+            <text x="224" y="408" text-anchor="middle" class="svg-tiny svg-faint">its own mean · std</text>
+            <text x="328" y="328" class="svg-small svg-faint">two normalisations, one image</text>
+          </g>
+          <g class="step" data-step="2">
+            <path d="M286 234 H 310" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M286 394 H 310" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="322" y="158" width="394" height="150" rx="3" fill="rgba(18,25,35,.3)" stroke="#354B5B" stroke-width="1.8"/>
+            <text x="336" y="184" class="svg-kicker svg-blue">DINOv3-B/16 · 85.66M</text>
+            <g fill="#58C4DD" opacity=".72">
+              <rect x="338" y="202" width="20" height="68" rx="1"/><rect x="366" y="202" width="20" height="68" rx="1"/><rect x="394" y="202" width="20" height="68" rx="1"/><rect x="422" y="202" width="20" height="68" rx="1"/><rect x="450" y="202" width="20" height="68" rx="1"/><rect x="478" y="202" width="20" height="68" rx="1"/><rect x="506" y="202" width="20" height="68" rx="1"/><rect x="534" y="202" width="20" height="68" rx="1"/><rect x="562" y="202" width="20" height="68" rx="1"/><rect x="590" y="202" width="20" height="68" rx="1"/><rect x="618" y="202" width="20" height="68" rx="1"/>
+            </g>
+            <rect x="646" y="202" width="20" height="68" rx="1" fill="rgba(244,211,69,.52)" stroke="#F4D345" stroke-width="1.8"/>
+            <g fill="#9A72AC">
+              <circle cx="348" cy="236" r="3"/><circle cx="376" cy="236" r="3"/><circle cx="404" cy="236" r="3"/><circle cx="432" cy="236" r="3"/><circle cx="460" cy="236" r="3"/><circle cx="488" cy="236" r="3"/><circle cx="516" cy="236" r="3"/><circle cx="544" cy="236" r="3"/><circle cx="572" cy="236" r="3"/><circle cx="600" cy="236" r="3"/><circle cx="628" cy="236" r="3"/>
+            </g>
+            <text x="336" y="294" class="svg-tiny svg-yellow">last block live</text>
+            <text x="336" y="342" class="svg-tiny svg-dim">OFT 4876800 + block 7088640 = 11965440 live</text>
+            <rect x="322" y="388" width="394" height="150" rx="3" fill="rgba(18,25,35,.3)" stroke="#354B5B" stroke-width="1.8"/>
+            <text x="336" y="414" class="svg-kicker svg-blue">SigLIP2-B/16-512 · 93.52M</text>
+            <g fill="#58C4DD" opacity=".72">
+              <rect x="338" y="432" width="20" height="68" rx="1"/><rect x="366" y="432" width="20" height="68" rx="1"/><rect x="394" y="432" width="20" height="68" rx="1"/><rect x="422" y="432" width="20" height="68" rx="1"/><rect x="450" y="432" width="20" height="68" rx="1"/><rect x="478" y="432" width="20" height="68" rx="1"/><rect x="506" y="432" width="20" height="68" rx="1"/><rect x="534" y="432" width="20" height="68" rx="1"/><rect x="562" y="432" width="20" height="68" rx="1"/><rect x="590" y="432" width="20" height="68" rx="1"/><rect x="618" y="432" width="20" height="68" rx="1"/>
+            </g>
+            <rect x="646" y="432" width="20" height="68" rx="1" fill="rgba(244,211,69,.52)" stroke="#F4D345" stroke-width="1.8"/>
+            <g fill="#9A72AC">
+              <circle cx="348" cy="466" r="3"/><circle cx="376" cy="466" r="3"/><circle cx="404" cy="466" r="3"/><circle cx="432" cy="466" r="3"/><circle cx="460" cy="466" r="3"/><circle cx="488" cy="466" r="3"/><circle cx="516" cy="466" r="3"/><circle cx="544" cy="466" r="3"/><circle cx="572" cy="466" r="3"/><circle cx="600" cy="466" r="3"/><circle cx="628" cy="466" r="3"/>
+            </g>
+            <text x="336" y="524" class="svg-tiny svg-yellow">last block live</text>
+            <text x="336" y="572" class="svg-tiny svg-dim">OFT 4876800 + block 7088640 = 11965440 live</text>
+            <text x="724" y="328" class="svg-mono svg-ink" style="font-size:20px">12 + 12 = 24 blocks</text>
+            <text x="724" y="352" class="svg-small svg-purple">purple = OFT rotation</text>
+            <text x="724" y="374" class="svg-small svg-yellow">yellow = unfrozen block</text>
+          </g>
+          <g class="step" data-step="3">
+            <path d="M716 232 H 748" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M716 462 H 748" fill="none" stroke="#58C4DD" stroke-width="2" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="760" y="184" width="34" height="96" rx="2" fill="rgba(88,196,221,.05)" stroke="#4E7A88" stroke-width="1.5"/>
+            <g fill="#58C4DD" opacity=".9">
+              <rect x="766" y="192" width="22" height="4" rx="1"/><rect x="766" y="203" width="22" height="4" rx="1"/><rect x="766" y="214" width="22" height="4" rx="1"/><rect x="766" y="225" width="22" height="4" rx="1"/><rect x="766" y="236" width="22" height="4" rx="1"/><rect x="766" y="247" width="22" height="4" rx="1"/><rect x="766" y="258" width="22" height="4" rx="1"/><rect x="766" y="269" width="22" height="4" rx="1"/>
+            </g>
+            <text x="777" y="304" text-anchor="middle" class="svg-small svg-dim">768</text>
+            <rect x="760" y="414" width="34" height="96" rx="2" fill="rgba(88,196,221,.05)" stroke="#4E7A88" stroke-width="1.5"/>
+            <g fill="#58C4DD" opacity=".9">
+              <rect x="766" y="422" width="22" height="4" rx="1"/><rect x="766" y="433" width="22" height="4" rx="1"/><rect x="766" y="444" width="22" height="4" rx="1"/><rect x="766" y="455" width="22" height="4" rx="1"/><rect x="766" y="466" width="22" height="4" rx="1"/><rect x="766" y="477" width="22" height="4" rx="1"/><rect x="766" y="488" width="22" height="4" rx="1"/><rect x="766" y="499" width="22" height="4" rx="1"/>
+            </g>
+            <text x="777" y="534" text-anchor="middle" class="svg-small svg-dim">768</text>
+            <path d="M800 232 C 832 232, 832 298, 860 298" fill="none" stroke="#58C4DD" stroke-width="1.8" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <path d="M800 462 C 832 462, 832 326, 860 326" fill="none" stroke="#58C4DD" stroke-width="1.8" marker-end="url(#arB)" class="dr" pathLength="1"/>
+            <rect x="874" y="278" width="44" height="80" rx="2" fill="rgba(88,196,221,.055)" stroke="#4E7A88" stroke-width="1.6"/>
+            <text x="896" y="298" text-anchor="middle" class="svg-small svg-ink">1536</text>
+            <text x="896" y="318" text-anchor="middle" class="svg-tiny svg-dim">concat</text>
+            <text x="896" y="338" text-anchor="middle" class="svg-tiny svg-faint">two vectors</text>
+          </g>
+          <g class="step" data-step="4">
+            <path d="M926 318 H 954" fill="none" stroke="#F4D345" stroke-width="2" marker-end="url(#arY)" class="dr" pathLength="1"/>
+            <rect x="968" y="270" width="154" height="96" rx="3" fill="rgba(244,211,69,.045)" stroke="#6C6030" stroke-width="1.8"/>
+            <text x="1045" y="298" text-anchor="middle" class="svg-label svg-ink">LayerNorm</text>
+            <text x="1045" y="320" text-anchor="middle" class="svg-small svg-dim">Linear 1536 → 12476</text>
+            <text x="1045" y="343" text-anchor="middle" class="svg-mono svg-yellow">19.18M</text>
+            <text x="1140" y="298" class="svg-label svg-yellow">12476</text>
+            <text x="1140" y="320" class="svg-small svg-dim">tags</text>
+            <text x="960" y="402" class="svg-mono svg-ink" style="font-size:22px">43.1M trainable</text>
+            <text x="960" y="426" class="svg-small svg-faint">23930880 towers + 19178684 head</text>
+            <line x1="28" y1="586" x2="1172" y2="586" stroke="#24303D" stroke-width="1.2"/>
+            <text x="28" y="610" class="svg-kicker svg-faint">5 learning-rate groups</text>
+            <g fill="#9A72AC"><circle cx="236" cy="606" r="3.5"/></g><text x="248" y="611" class="svg-tiny svg-purple">DINO OFT 5e-4</text>
+            <g fill="#F4D345"><circle cx="408" cy="606" r="3.5"/></g><text x="420" y="611" class="svg-tiny svg-yellow">DINO block 3e-5</text>
+            <g fill="#9A72AC"><circle cx="580" cy="606" r="3.5"/></g><text x="592" y="611" class="svg-tiny svg-purple">SigLIP OFT 5e-4 *</text>
+            <g fill="#F4D345"><circle cx="772" cy="606" r="3.5"/></g><text x="784" y="611" class="svg-tiny svg-yellow">SigLIP block 3e-5 *</text>
+            <g fill="#58C4DD"><circle cx="974" cy="606" r="3.5"/></g><text x="986" y="611" class="svg-tiny svg-blue">head 1.2e-4</text>
+            <text x="28" y="636" class="svg-tiny svg-faint">* reused DINO values; never bracketed on SigLIP</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 · payoff -->
+  <section class="scene" data-scene="8" data-steps="4" aria-labelledby="t8">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>08 · the payoff</p>
+        <h2 id="t8">What the second tower buys</h2>
+        <p class="sub">Frozen concat measured +32% macro over the better tower with a linear head, and only +1.6% once either tower gets a bottleneck. A fine-tuned DINOv3 may already fill that gap.</p>
+      </header>
+      <div class="figure">
+        <svg viewBox="0 0 1200 640" role="img" aria-label="Frozen feature probe macro F1: DINOv3 0.0407, SigLIP2 0.0452, concat 0.0597 which is 32 percent higher, and fine-tuned single tower 0.0632 shown separately because the recipe is not comparable">
+          <g class="step" data-step="1">
+            <line x1="80" y1="500" x2="900" y2="500" stroke="#3A4A5B" stroke-width="1.5"/>
+            <line x1="80" y1="500" x2="80" y2="146" stroke="#293744" stroke-width="1.2"/>
+            <line x1="80" y1="321" x2="900" y2="321" stroke="#24303D" stroke-width="1" stroke-dasharray="3 7"/>
+            <line x1="80" y1="228" x2="900" y2="228" stroke="#24303D" stroke-width="1" stroke-dasharray="3 7"/>
+            <line x1="80" y1="134" x2="900" y2="134" stroke="#24303D" stroke-width="1" stroke-dasharray="3 7"/>
+            <text x="68" y="506" text-anchor="end" class="svg-tiny svg-faint">0</text>
+            <text x="68" y="326" text-anchor="end" class="svg-tiny svg-faint">0.04</text>
+            <text x="68" y="233" text-anchor="end" class="svg-tiny svg-faint">0.06</text>
+            <text x="68" y="139" text-anchor="end" class="svg-tiny svg-faint">0.07</text>
+            <text x="490" y="544" text-anchor="middle" class="svg-kicker svg-faint">frozen feature probe · macro F1 @ 0.40</text>
+            <text x="180" y="580" text-anchor="middle" class="svg-small svg-ink">DINOv3</text>
+            <text x="360" y="580" text-anchor="middle" class="svg-small svg-ink">SigLIP2</text>
+            <text x="540" y="580" text-anchor="middle" class="svg-small svg-ink">concat 1536</text>
+            <line x1="700" y1="116" x2="700" y2="500" stroke="#3A4A5B" stroke-width="1.2" stroke-dasharray="4 7"/>
+            <text x="780" y="580" text-anchor="middle" class="svg-small svg-yellow">fine-tuned · one tower</text>
+            <text x="80" y="620" class="svg-tiny svg-faint">same linear head · 50k validation · 10k train cache · Adam · 4000 steps · with a 2048 bottleneck instead: 0.0475 / 0.0577 / 0.0586</text>
+          </g>
+          <g class="step" data-step="2">
+            <rect x="120" y="292" width="120" height="208" rx="2" fill="rgba(88,196,221,.2)" stroke="#58C4DD" stroke-width="1.8"/>
+            <text x="180" y="278" text-anchor="middle" class="svg-num svg-ink" style="font-size:27px">0.0407</text>
+            <text x="180" y="542" text-anchor="middle" class="svg-tiny svg-faint">micro 0.1674</text>
+            <rect x="300" y="268" width="120" height="232" rx="2" fill="rgba(88,196,221,.28)" stroke="#58C4DD" stroke-width="1.8"/>
+            <text x="360" y="254" text-anchor="middle" class="svg-num svg-ink" style="font-size:27px">0.0452</text>
+            <text x="360" y="562" text-anchor="middle" class="svg-tiny svg-faint">micro 0.1593</text>
+            <text x="360" y="522" text-anchor="middle" class="svg-tiny svg-dim">better macro</text>
+          </g>
+          <g class="step" data-step="3">
+            <rect x="480" y="196" width="120" height="304" rx="2" fill="rgba(131,193,103,.28)" stroke="#83C167" stroke-width="2" class="glow-g"/>
+            <text x="540" y="182" text-anchor="middle" class="svg-num svg-green" style="font-size:29px">0.0597</text>
+            <text x="540" y="542" text-anchor="middle" class="svg-tiny svg-faint">micro 0.2065</text>
+            <text x="540" y="562" text-anchor="middle" class="svg-tiny svg-green">+32% macro</text>
+            <path d="M420 246 C 448 168, 492 168, 520 184" fill="none" stroke="#F4D345" stroke-width="1.8" marker-end="url(#arY)" class="dr glow-y" pathLength="1"/>
+            <text x="474" y="154" text-anchor="middle" class="svg-small svg-yellow">+32.1%</text>
+            <text x="474" y="174" text-anchor="middle" class="svg-tiny svg-faint">over SigLIP2 alone</text>
+          </g>
+          <g class="step" data-step="4">
+            <rect x="760" y="170" width="120" height="330" rx="2" fill="rgba(244,211,69,.18)" stroke="#F4D345" stroke-width="1.8"/>
+            <text x="820" y="156" text-anchor="middle" class="svg-num svg-yellow" style="font-size:27px">0.0632</text>
+            <text x="820" y="542" text-anchor="middle" class="svg-tiny svg-faint">u1 · single tower</text>
+            <text x="820" y="562" text-anchor="middle" class="svg-tiny svg-faint">fine-tuned with OFT</text>
+            <rect x="930" y="254" width="238" height="192" rx="3" fill="rgba(244,211,69,.035)" stroke="#5A5128" stroke-width="1.4"/>
+            <text x="950" y="282" class="svg-kicker svg-yellow">the open question</text>
+            <text x="950" y="316" class="svg-label svg-ink">Does a fine-tuned</text>
+            <text x="950" y="340" class="svg-label svg-ink">DINOv3 leave room</text>
+            <text x="950" y="364" class="svg-label svg-ink">for SigLIP2?</text>
+            <text x="950" y="396" class="svg-small svg-dim">Different recipe.</text>
+            <text x="950" y="417" class="svg-small svg-dim">Not a controlled comparison.</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 · cheat -->
+  <section class="scene" data-scene="9" data-steps="4" aria-labelledby="t9">
+    <div class="wrap">
+      <header class="head">
+        <p class="kick"><span class="tick"></span>09 · cheat sheet</p>
+        <h2 id="t9">The one-condition rule</h2>
+        <p class="sub">Three designs, one test. The same invariant decides all of them.</p>
+      </header>
+      <div class="figure">
+        <div class="cheat">
+          <div class="rulebox step" data-step="1">
+            <p class="rl">the rule</p>
+            <p>A cache is valid only if nothing inside the tower can change during the run.</p>
+          </div>
+          <table class="regime" aria-label="Cacheability and cost of three regimes">
+            <thead>
+              <tr>
+                <th>regime</th>
+                <th>inside the tower</th>
+                <th>cache</th>
+                <th>full pass</th>
+                <th>trainable</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="step" data-step="2">
+                <td>A · both frozen<small>no adapter anywhere</small></td>
+                <td>nothing trainable</td>
+                <td><span class="yes">yes</span><small>16.3 GB</small></td>
+                <td>minutes<small>after a 10.4 h fill</small></td>
+                <td>19.18M<small>head only</small></td>
+              </tr>
+              <tr class="step" data-step="3">
+                <td>B · OFT both<small>no block unfrozen</small></td>
+                <td>rotations in all 24 blocks</td>
+                <td><span class="no">no</span><small>output moves</small></td>
+                <td>23–27 h<small>55–65 images/s</small></td>
+                <td>29.81M<small>10.63M OFT + 19.18M</small></td>
+              </tr>
+              <tr class="step choice" data-step="4">
+                <td>C · your choice<small>OFT + last block each</small></td>
+                <td>rotations + 2 unfrozen blocks</td>
+                <td><span class="no">no</span><small>output moves</small></td>
+                <td>23–27 h<small>55–65 images/s</small></td>
+                <td>43.1M<small>23.93M + 19.18M</small></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="verdict step" data-step="4">
+            <span><strong>Your design is not cacheable.</strong> 23–27 hours per pass.</span>
+            <span class="dotsep"></span>
+            <span>Not a mistake. A cost.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="hud">
+  <div class="now">
+    <span class="num" id="counter">01 / 10</span>
+    <span class="name" id="sceneName">Thesis</span>
+  </div>
+  <div class="pips" id="pips" aria-hidden="true"></div>
+  <div class="keys">
+    <button type="button" class="navbtn prev" id="prev" aria-label="Previous step or scene"><span class="ar" aria-hidden="true">←</span><span>Prev</span></button>
+    <button type="button" class="navbtn next" id="next" aria-label="Next step or scene"><span>Next</span><span class="ar" aria-hidden="true">→</span></button>
+  </div>
+</div>
+
+<div class="sr" id="status" aria-live="polite"></div>
+
+<noscript><div class="noscript">This explainer needs JavaScript for its scene navigation and animation. The numbers are all local to this file; nothing is fetched.</div></noscript>
+
+<script>
+(function(){
+  'use strict';
+
+  var scenes = Array.prototype.slice.call(document.querySelectorAll('.scene'));
+  var rail = Array.prototype.slice.call(document.querySelectorAll('.rail-link'));
+  var pips = document.getElementById('pips');
+  var prog = document.getElementById('prog');
+  var prev = document.getElementById('prev');
+  var next = document.getElementById('next');
+  var counter = document.getElementById('counter');
+  var sceneName = document.getElementById('sceneName');
+  var status = document.getElementById('status');
+  var names = ['Thesis','The step','Cache','Broken key','OFT','After pooling','Regimes','Design','Payoff','Cheat sheet'];
+  var cur = 0;
+  var step = 1;
+  var pipNodes = [];
+
+  function stepsOf(i){
+    var n = parseInt(scenes[i].getAttribute('data-steps'), 10);
+    return isNaN(n) ? 1 : n;
+  }
+
+  function sceneStepGroups(i){
+    return Array.prototype.slice.call(scenes[i].querySelectorAll('.step'));
+  }
+
+  function buildPips(){
+    pips.innerHTML = '';
+    pipNodes = [];
+    for (var i = 0; i < stepsOf(cur); i++) {
+      var node = document.createElement('i');
+      pips.appendChild(node);
+      pipNodes.push(node);
+    }
+  }
+
+  function updatePips(){
+    for (var i = 0; i < pipNodes.length; i++) {
+      pipNodes[i].className = i + 1 < step ? 'seen' : (i + 1 === step ? 'on' : '');
+    }
+  }
+
+  function reveal(i, s){
+    var groups = sceneStepGroups(i);
+    for (var g = 0; g < groups.length; g++) {
+      var n = parseInt(groups[g].getAttribute('data-step'), 10) || 1;
+      var hideAt = parseInt(groups[g].getAttribute('data-hide-at'), 10);
+      var show = i === cur && n <= s;
+      if (hideAt && s >= hideAt) {
+        groups[g].classList.add('past');
+      } else {
+        groups[g].classList.remove('past');
+      }
+      groups[g].classList.toggle('in', show);
+    }
+  }
+
+  function render(reset){
+    var i;
+    for (i = 0; i < scenes.length; i++) {
+      var on = i === cur;
+      scenes[i].classList.toggle('active', on);
+      scenes[i].setAttribute('aria-hidden', on ? 'false' : 'true');
+    }
+    for (i = 0; i < rail.length; i++) {
+      rail[i].classList.toggle('on', i === cur);
+      rail[i].classList.toggle('done', i < cur);
+    }
+    var total = 0;
+    for (i = 0; i < scenes.length; i++) total += stepsOf(i);
+    var done = 0;
+    for (i = 0; i < cur; i++) done += stepsOf(i);
+    done += step;
+    var pct = Math.max(0, Math.min(100, (done / total) * 100));
+    prog.style.width = pct.toFixed(2) + '%';
+    prog.setAttribute('aria-valuenow', pct.toFixed(0));
+    counter.textContent = String(cur + 1).padStart(2, '0') + ' / ' + String(scenes.length).padStart(2, '0');
+    sceneName.textContent = names[cur];
+    prev.disabled = cur === 0 && step === 1;
+    var atEnd = cur === scenes.length - 1 && step === stepsOf(cur);
+    next.disabled = atEnd;
+    next.lastChild.textContent = atEnd ? 'End' : 'Next';
+    buildPips();
+    updatePips();
+    if (reset) {
+      var all = document.querySelectorAll('.step');
+      for (i = 0; i < all.length; i++) all[i].classList.remove('in');
+      window.requestAnimationFrame(function(){ reveal(cur, step); });
+    } else {
+      reveal(cur, step);
+    }
+    status.textContent = 'Scene ' + (cur + 1) + ' of ' + scenes.length + ', ' + names[cur] + ', step ' + step + ' of ' + stepsOf(cur) + '.';
+  }
+
+  function goScene(i){
+    if (i < 0 || i >= scenes.length) return;
+    cur = i;
+    step = 1;
+    render(true);
+  }
+
+  function nextStep(){
+    if (step < stepsOf(cur)) {
+      step += 1;
+      render(false);
+    } else if (cur < scenes.length - 1) {
+      cur += 1;
+      step = 1;
+      render(true);
+    }
+  }
+
+  function prevStep(){
+    if (step > 1) {
+      step -= 1;
+      render(false);
+    } else if (cur > 0) {
+      cur -= 1;
+      step = stepsOf(cur);
+      render(true);
+    }
+  }
+
+  prev.addEventListener('click', prevStep);
+  next.addEventListener('click', nextStep);
+
+  for (var r = 0; r < rail.length; r++) {
+    (function(button){
+      button.addEventListener('click', function(){ goScene(parseInt(button.getAttribute('data-go'), 10)); });
+    })(rail[r]);
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    var tag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
+    var nativeSpace = (e.key === ' ' || e.key === 'Enter') && (tag === 'button' || tag === 'a');
+    if (nativeSpace) return;
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+      e.preventDefault();
+      nextStep();
+    } else if (e.key === 'ArrowLeft' || e.key === 'Backspace' || e.key === 'PageUp') {
+      e.preventDefault();
+      prevStep();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      goScene(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      goScene(scenes.length - 1);
+      step = stepsOf(cur);
+      render(false);
+    }
+  });
+
+  var touchX = null;
+  var touchY = null;
+  document.getElementById('stage').addEventListener('pointerdown', function(e){
+    if (e.pointerType !== 'touch') return;
+    touchX = e.clientX; touchY = e.clientY;
+  }, {passive:true});
+  document.getElementById('stage').addEventListener('pointerup', function(e){
+    if (e.pointerType !== 'touch' || touchX === null) return;
+    var dx = e.clientX - touchX;
+    var dy = e.clientY - touchY;
+    touchX = null; touchY = null;
+    if (Math.abs(dx) > 54 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      if (dx < 0) nextStep(); else prevStep();
+    }
+  }, {passive:true});
+
+  render(true);
+})();
+</script>
+</body>
+</html>

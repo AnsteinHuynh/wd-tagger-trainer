@@ -1,4 +1,9 @@
-"""Build REPORT.md: the bar, our arms, the run history, and the efficiency notes."""
+"""DEPRECATED, do not use, do not extend, do not cite as a source.
+
+This module generated `REPORT.md`, a second place for results that drifted out of date within weeks
+and split the record in two. Findings now live in `ARM-RESULTS.md` only. The file is kept because it
+holds a history of the 10k era that nothing else preserved, not because it should run again.
+"""
 from __future__ import annotations
 
 import argparse

@@ -1,20 +1,6 @@
-"""OFTv2 (Orthogonal Fine-Tuning, v2) adapters.
+"""OFTv2 (Orthogonal Fine-Tuning, v2) adapters, ported from OneTrainer (`PeftType.OFT_2`).
 
-Ported from OneTrainer's `modules/module/oft_utils.py` + `LoRAModule.OFTModule`
-(`PeftType.OFT_2`), adapted to wrap arbitrary `nn.Linear` / `nn.Conv2d` modules
-with a frozen base weight.
-
-OFT parametrises a block-diagonal orthogonal rotation R as the Cayley transform
-of a skew-symmetric matrix Q built from a learned parameter (per block, upper
-triangle).  v2 differs from v1 in that the Cayley transform is expanded as a
-truncated Neumann series instead of `torch.linalg.solve`, which is much cheaper
-and fully differentiable.  At init the parameter is zero, so R = I exactly and
-the adapted model starts out identical to the base model.
-
-* `Linear`: rotating the *input* is mathematically equivalent to rotating the
-  weights, and is cheaper, so we rotate activations.
-* `Conv2d`: rotating the input would destroy spatial structure, so we rotate the
-  (flattened) weight instead.
+R = block-diagonal rotation: Cayley transform of skew-symmetric Q built per block from the learnt upper triangle. v2 uses a truncated Neumann series instead of `torch.linalg.solve` (cheaper, differentiable); parameter starts at zero so R = I. Linear rotates input (equivalent to rotating weights, cheaper); Conv2d rotates flattened weight (rotating input would destroy spatial structure).
 """
 from __future__ import annotations
 
@@ -45,7 +31,7 @@ class MultiplicativeDropoutLayer(nn.Module):
 
 
 class OFTRotationModule(nn.Module):
-    """Holds the OFT parameter and turns it into the `r` block rotations."""
+    """OFT parameter -> `r` block rotations."""
 
     def __init__(
         self,
@@ -90,7 +76,10 @@ class OFTRotationModule(nn.Module):
         if not self.use_cayley_neumann:
             eye = torch.eye(self.block_size, device=q_skew.device, dtype=q_skew.dtype)
             eye = eye.unsqueeze(0).expand(b, -1, -1)
-            return torch.linalg.solve(eye + q_skew, eye - q_skew, left=False)
+            # Must match the Neumann branch: I + 2Q + 2Q^2 + ... = (I-Q)^-1 (I+Q).
+            # Solving X(I+Q) = (I-Q) gives (I-Q)(I+Q)^-1, the inverse -- measured 1.13
+            # apart in spectral norm; swapping silently breaks a trained adapter.
+            return torch.linalg.solve(eye - q_skew, eye + q_skew)
 
         n = self.num_cayley_neumann_terms
         r = torch.eye(self.block_size, device=q_skew.device, dtype=q_skew.dtype).repeat(b, 1, 1)
@@ -106,7 +95,7 @@ class OFTRotationModule(nn.Module):
         return r
 
     def rotate_vector(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply the block rotation to the last dimension of `x`."""
+        """Block rotation on the last dim of `x`."""
         rot = self.dropout(self._cayley_batch()).to(x.dtype)
         in_dtype = x.dtype
         x = x.to(rot.dtype)
@@ -122,7 +111,7 @@ class OFTRotationModule(nn.Module):
         return out.reshape(*lead, d).to(in_dtype)
 
     def rotate_matrix(self, w: torch.Tensor) -> torch.Tensor:
-        """Rotate the input axis of a weight matrix [out, in]."""
+        """Rotate the input axis of weight [out, in]."""
         rot = self.dropout(self._cayley_batch()).to(w.dtype)
         out_f, in_f = w.shape
         rank = in_f // self.block_size
@@ -136,10 +125,10 @@ class OFTRotationModule(nn.Module):
 
 
 class OFTLinear(nn.Module):
-    """`nn.Linear` with a frozen weight whose *input* is orthogonally rotated."""
+    """`nn.Linear` with frozen weight, input orthogonally rotated."""
 
     def __init__(self, base: nn.Linear, block_size: int, block_share: bool,
-                 oft_scaled: bool, dropout: float):
+                 oft_scaled: bool, dropout: float, cayley_terms: int = 5):
         super().__init__()
         self.base = base
         self.base.weight.requires_grad_(False)
@@ -155,13 +144,15 @@ class OFTLinear(nn.Module):
             in_features=in_f,
             block_share=block_share,
             oft_scaled=oft_scaled,
+            use_cayley_neumann=cayley_terms > 0,
+            num_cayley_neumann_terms=max(5, cayley_terms),
             dropout_probability=dropout,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return F.linear(self.oft.rotate_vector(x), self.base.weight, self.base.bias)
 
-    # compatibility with code that pokes at `.weight` / `.bias` (e.g. HF models)
+    # `.weight` / `.bias` compatibility for code that pokes at them (e.g. HF models)
     @property
     def weight(self):
         return self.base.weight
@@ -172,10 +163,10 @@ class OFTLinear(nn.Module):
 
 
 class OFTConv2d(nn.Module):
-    """`nn.Conv2d` with a frozen kernel whose flattened weight is rotated."""
+    """`nn.Conv2d` with frozen kernel, flattened weight rotated."""
 
     def __init__(self, base: nn.Conv2d, block_size: int, block_share: bool,
-                 oft_scaled: bool, dropout: float):
+                 oft_scaled: bool, dropout: float, cayley_terms: int = 5):
         super().__init__()
         self.base = base
         self.base.weight.requires_grad_(False)
@@ -193,6 +184,8 @@ class OFTConv2d(nn.Module):
             in_features=in_f,
             block_share=block_share,
             oft_scaled=oft_scaled,
+            use_cayley_neumann=cayley_terms > 0,
+            num_cayley_neumann_terms=max(5, cayley_terms),
             dropout_probability=dropout,
         )
 
@@ -213,7 +206,7 @@ class OFTConv2d(nn.Module):
 
 
 def _adjust_block_size(in_features: int, block_size: int) -> int:
-    """Pick a valid block size dividing `in_features` (mirrors OneTrainer)."""
+    """Block size dividing `in_features` (mirrors OneTrainer)."""
     if block_size <= 0:
         raise ValueError("block_size must be positive")
     if in_features % block_size == 0 and block_size <= in_features:

@@ -1,0 +1,42 @@
+{
+  "checkpoint": "runs\\470e6fa9\\best_val.pt",
+  "run": "runs\\470e6fa9",
+  "batch_size": 8,
+  "seconds": 25.3,
+  "thresholds": [
+    0.4
+  ],
+  "subsets": {
+    "1000": {
+      "macro_f1": [
+        0.029585783003992568
+      ],
+      "macro_mcc": [
+        0.03023739475889763
+      ],
+      "macro_precision": [
+        0.040420651246341685
+      ],
+      "macro_recall": [
+        0.02638120661024593
+      ],
+      "micro_f1": [
+        0.4421862125789618
+      ],
+      "micro_mcc": [
+        0.4487736221197509
+      ],
+      "micro_precision": [
+        0.5424772002336133
+      ],
+      "micro_recall": [
+        0.3731919891210286
+      ],
+      "macro_f1_per_tag_best": 0.029585783003992568,
+      "n_supported_labels": 4669
+    }
+  },
+  "review": {
+    "note": "macro/micro F1/MCC/P/R at each threshold; macro_f1_per_tag_best tunes a threshold per tag"
+  }
+}

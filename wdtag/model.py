@@ -1,4 +1,4 @@
-"""DINOv3-ViT/B + OFTv2 tagger."""
+"""Vision transformer + OFTv2 tagger, with DINOv3-ViT or SigLIP2 as the adapted tower."""
 from __future__ import annotations
 
 import torch
@@ -11,13 +11,47 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 N_REGISTERS = 4
 
+# Head stats in `head_pool` order: cls_mean 2x768, cls_mean_max_std 4x768=3072, near ConvNeXt-V2-Huge stage-4 2816.
+POOL_PARTS = ("cls", "mean", "max", "std")
+
+
+def backbone_kind(path: str) -> str:
+    """Which tower lives at `path`, read from its own config.json rather than from a cfg field:
+    a new field would change the sha8 of every config for the sake of one boolean."""
+    import json
+    import os
+
+    try:
+        with open(os.path.join(path, "config.json"), encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except OSError:
+        return "dino"
+    return "siglip2" if str(raw.get("model_type", "")).startswith("siglip") else "dino"
+
+
+def backbone_layers(backbone: nn.Module) -> list[nn.Module]:
+    """Block list for either tower: DINOv3ViTModel keeps them in `.model.layer`,
+    SiglipVisionModel in `.encoder.layers` (transformers 5.16 verified)."""
+    if hasattr(backbone, "encoder"):
+        return list(backbone.encoder.layers)
+    return list(backbone.model.layer)
+
+
+def pool_parts(name: str) -> tuple[str, ...]:
+    parts = tuple(p for p in name.split("_") if p)
+    bad = [p for p in parts if p not in POOL_PARTS]
+    if bad or not parts:
+        raise ValueError(f"head_pool {name!r} has unknown parts {bad}; "
+                         f"known parts are {POOL_PARTS}")
+    return parts
+
 
 def _replace_child(parent: nn.Module, name: str, new: nn.Module) -> None:
     setattr(parent, name, new)
 
 
 def apply_oft_to_backbone(backbone: nn.Module, cfg: TrainConfig) -> int:
-    """Wrap every transformer Linear (and optionally the patch-embed Conv) in OFTv2."""
+    """Wrap transformer Linears in OFTv2 (patch-embed Conv too when `oft_conv`)."""
     targets: list[tuple[nn.Module, str, nn.Module]] = []
     for name, mod in backbone.named_modules():
         if isinstance(mod, nn.Linear):
@@ -25,19 +59,66 @@ def apply_oft_to_backbone(backbone: nn.Module, cfg: TrainConfig) -> int:
         elif isinstance(mod, nn.Conv2d) and cfg.oft_conv:
             targets.append((mod, name, "conv"))
 
+    terms = int(getattr(cfg, "cayley_terms", 5))
     for mod, name, kind in targets:
         parent_name, _, child = name.rpartition(".")
         parent = backbone.get_submodule(parent_name) if parent_name else backbone
         if kind == "linear":
-            new = OFTLinear(mod, cfg.block_size, cfg.block_share, cfg.oft_scaled, cfg.oft_dropout)
+            new = OFTLinear(mod, cfg.block_size, cfg.block_share, cfg.oft_scaled,
+                            cfg.oft_dropout, terms)
         else:
-            new = OFTConv2d(mod, cfg.block_size, cfg.block_share, cfg.oft_scaled, cfg.oft_dropout)
+            new = OFTConv2d(mod, cfg.block_size, cfg.block_share, cfg.oft_scaled,
+                            cfg.oft_dropout, terms)
         _replace_child(parent, child, new)
     return len(targets)
 
 
+def unfreeze_last_blocks(backbone: nn.Module, n: int) -> int:
+    """Unfreeze the last `n` blocks' base weights; their OFT rotation stays at theta=0 (Cayley(0)=I), avoiding a redundant rotation-beside-weight parameterisation."""
+    layers = backbone_layers(backbone)
+    if n < 1 or n > len(layers):
+        raise ValueError(f"unfreeze_blocks={n} outside 1..{len(layers)}")
+    for blk in layers[len(layers) - n:]:
+        for name, p in blk.named_parameters():
+            p.requires_grad_(not name.endswith("oft.weight"))
+    return n
+
+
+def enable_block_checkpointing(backbone: nn.Module, n: int) -> int:
+    """Recompute activations for the last `n` blocks.
+
+    At 512px one block is ~1.5 GB at batch 48 (1029x768x48x~10 bf16), which OOMs well before
+    four, while this keeps only the block's input (~76 MB) and pays one extra forward.
+
+    A tower with no unfrozen block still needs this when OFT rotations sit inside the blocks:
+    the weights are frozen but the graph runs through the rotations, so every block's
+    activations are retained exactly as if it were unfrozen. The gating in `DinoTagger` used to
+    assume otherwise, which made `grad_checkpoint_blocks` silently do nothing on an OFT-only run.
+    """
+    import torch.utils.checkpoint as cp
+
+    layers = backbone_layers(backbone)
+    if n < 1 or n > len(layers):
+        raise ValueError(f"checkpoint blocks={n} outside 1..{len(layers)}")
+    for blk in layers[len(layers) - n:]:
+        if getattr(blk, "_ckpt_wrapped", False):
+            continue
+        orig = blk.forward
+
+        def wrapped(*args, _fn=orig, **kwargs):
+            return cp.checkpoint(_fn, *args, use_reentrant=False, **kwargs)
+
+        blk.forward = wrapped
+        blk._ckpt_wrapped = True
+    return n
+
+
 class DinoTagger(nn.Module):
-    """Frozen DINOv3-B/16 with OFTv2 adapters and a multi-label head."""
+    """Frozen-or-adapted vision tower with OFTv2 adapters and a multi-label head.
+
+    The tower is DINOv3-B/16 by default and SigLIP2-B/16 when `cfg.backbone_dir` points at a
+    siglip checkpoint; the class name is historical.
+    """
 
     def __init__(self, cfg: TrainConfig, n_labels: int, dtype=torch.bfloat16):
         super().__init__()
@@ -45,15 +126,61 @@ class DinoTagger(nn.Module):
 
         self.cfg = cfg
         self.n_labels = n_labels
-        self.backbone = DINOv3ViTModel.from_pretrained(DINO_DIR, dtype=dtype)
+        self.kind = backbone_kind(cfg.backbone_dir or DINO_DIR)
+        if self.kind == "siglip2":
+            from transformers import SiglipVisionModel
+            self.backbone = SiglipVisionModel.from_pretrained(cfg.backbone_dir, dtype=dtype)
+        else:
+            self.backbone = DINOv3ViTModel.from_pretrained(cfg.backbone_dir or DINO_DIR, dtype=dtype)
         for p in self.backbone.parameters():
             p.requires_grad_(False)
         self.n_oft = apply_oft_to_backbone(self.backbone, cfg)
+        self.n_unfrozen = 0
+        if getattr(cfg, "unfreeze_blocks", 0) > 0:
+            # after the OFT wrap: it freezes the rotations that wrap just created
+            self.n_unfrozen = unfreeze_last_blocks(self.backbone, cfg.unfreeze_blocks)
         self.backbone.gradient_checkpointing = False
+        # DINOv3 prefixes its patch tokens with a cls token and four registers; SigLIP2 has
+        # neither, and its 1024 tokens are all image patches.
+        self.patch_offset = 1 + N_REGISTERS if self.kind == "dino" else 0
+        # An OFT-only run keeps a graph through every block, so checkpointing the whole encoder
+        # is what buys memory; without adapters there is nothing to recompute for and the gate
+        # stays off.
+        _ck = getattr(cfg, "grad_checkpoint_blocks", False)
+        if _ck and (self.n_unfrozen > 0 or self.n_oft > 0):
+            n_layers = len(backbone_layers(self.backbone))
+            if isinstance(_ck, bool):  # True = every block that carries a backward
+                n_ck = self.n_unfrozen if self.n_unfrozen > 0 else n_layers
+            else:                      # int N = only the last N, for speed at known VRAM
+                n_ck = int(_ck)
+            n_ck = enable_block_checkpointing(self.backbone, n_ck)
+            print(f"[ckpt] gradient checkpointing on the last {n_ck} of {n_layers} block(s)", flush=True)
 
         hidden = self.backbone.config.hidden_size
-        pool_dim = hidden * (2 if cfg.head_pool == "cls_mean" else 1)
-        self.norm = nn.LayerNorm(pool_dim)
+        self.parts = pool_parts(cfg.head_pool)
+        pool_dim = hidden * len(self.parts)
+        # Second tower, frozen with no adapter inside, so it runs under no_grad: no retained
+        # activations, no backward, and its features are exactly what a precomputed cache would
+        # hold. Measured at +1.6% macro and +18.5% micro over the best single tower on cached
+        # features, and it is the only way two towers fit in 24.5 GB at batch 48.
+        self.siglip = None
+        self.sig_dim = 0
+        if getattr(cfg, "siglip_dir", ""):
+            from transformers import SiglipVisionModel
+            self.siglip = SiglipVisionModel.from_pretrained(cfg.siglip_dir, dtype=dtype).eval()
+            for p in self.siglip.parameters():
+                p.requires_grad_(False)
+            self.sig_dim = self.siglip.config.hidden_size
+            pool_dim += self.sig_dim
+        # Head fp32, rest bf16: many small updates need precision, bulk compute does not.
+        # bf16 head update ~2 bf16 steps at peak LR but ~1/50 after cosine decay, where
+        # only stochastic rounding prevents a stall. Head ~0.02% of FLOPs.
+        self.head_dtype = (torch.float32 if getattr(cfg, "head_fp32", False) else dtype)
+        # One LayerNorm per tower, not one over the concatenation: DINOv3's cls arrives already
+        # normalised by its own pooler while SigLIP2's pooling output does not, so a shared norm
+        # couples their scales and lets the wider side dominate the head's input statistics.
+        self.norm = nn.LayerNorm(pool_dim - self.sig_dim)
+        self.norm2 = nn.LayerNorm(self.sig_dim) if self.siglip is not None else None
         layers: list[nn.Module] = [nn.Dropout(cfg.head_dropout)]
         if cfg.head_hidden > 0:
             layers += [nn.Linear(pool_dim, cfg.head_hidden), nn.GELU(),
@@ -61,41 +188,72 @@ class DinoTagger(nn.Module):
         else:
             layers += [nn.Linear(pool_dim, n_labels)]
         self.head = nn.Sequential(*layers)
-        self.head = self.head.to(dtype)
-        self.norm = self.norm.to(dtype)
-        self.register_buffer("in_mean", torch.tensor(IMAGENET_MEAN, dtype=dtype).view(1, 3, 1, 1),
-                             persistent=False)
-        self.register_buffer("in_std", torch.tensor(IMAGENET_STD, dtype=dtype).view(1, 3, 1, 1),
-                             persistent=False)
+        self.head = self.head.to(self.head_dtype)
+        self.norm = self.norm.to(self.head_dtype)
+        if self.norm2 is not None:
+            self.norm2 = self.norm2.to(self.head_dtype)
+        # No learned per-class bias: init_head_bias() sets logit(prior), BALMS's NTR bias
+        # is fixed from the prior; both double-suppressed the tail at lr_head.
+        # See losses.py, scratch/sophie/loss-audit.md.
+        self.register_buffer("in_mean", torch.tensor(
+            (0.5, 0.5, 0.5) if self.kind == "siglip2" else IMAGENET_MEAN, dtype=dtype).view(1, 3, 1, 1),
+            persistent=False)
+        self.register_buffer("in_std", torch.tensor(
+            (0.5, 0.5, 0.5) if self.kind == "siglip2" else IMAGENET_STD, dtype=dtype).view(1, 3, 1, 1),
+            persistent=False)
 
     def _prep(self, pixel_values: torch.Tensor) -> torch.Tensor:
-        """uint8 [0,255] -> normalised bf16, done on the GPU when given uint8."""
+        """uint8 [0,255] -> normalised bf16."""
         if pixel_values.dtype == torch.uint8:
             x = pixel_values.to(self.in_mean.dtype).div_(255.0)
             return (x - self.in_mean) / self.in_std
         return pixel_values
 
+    def _siglip_prep(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """SigLIP2 wants (x/255 - 0.5)/0.5. Undo whatever normalisation the caller applied, so
+        both paths reach the same tensor."""
+        if pixel_values.dtype == torch.uint8:
+            x01 = pixel_values.to(torch.float32).div_(255.0)
+        else:
+            x01 = pixel_values.float() * self.in_std.float() + self.in_mean.float()
+        return ((x01 - 0.5) / 0.5).to(self.siglip.dtype)
+
     # ---------------------------------------------------------------- features
     def forward_features(self, pixel_values: torch.Tensor) -> torch.Tensor:
         out = self.backbone(pixel_values=pixel_values)
-        cls = out.pooler_output                       # already LayerNorm'ed CLS
-        if self.cfg.head_pool == "cls":
-            return cls
-        patches = out.last_hidden_state[:, 1 + N_REGISTERS:, :]
-        mean = patches.mean(dim=1)
-        if self.cfg.head_pool == "mean":
-            return mean
-        return torch.cat([cls, mean], dim=-1)
+        need_patches = any(p != "cls" for p in self.parts)
+        patches = out.last_hidden_state[:, self.patch_offset:, :] if need_patches else None
+        feats = []
+        for p in self.parts:
+            if p == "cls":
+                feats.append(out.pooler_output)          # already LayerNorm'ed CLS
+            elif p == "mean":
+                feats.append(patches.mean(dim=1))
+            elif p == "max":
+                # peak over patches: "concept present anywhere", what a multi-label
+                # tag decision needs
+                feats.append(patches.amax(dim=1))
+            elif p == "std":
+                # spread over patches; fp32 because bf16 variance over 1024 tokens
+                # loses too much precision
+                feats.append(patches.float().std(dim=1, unbiased=False).to(patches.dtype))
+        return feats[0] if len(feats) == 1 else torch.cat(feats, dim=-1)
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
-        return self.head(self.norm(self.forward_features(self._prep(pixel_values))))
+        feats = self.forward_features(self._prep(pixel_values))
+        if self.siglip is not None:
+            with torch.no_grad():
+                f2 = self.siglip(pixel_values=self._siglip_prep(pixel_values)).pooler_output
+            # normalise each tower on its own, then concatenate
+            feats = torch.cat([self.norm(feats.to(self.head_dtype)),
+                               self.norm2(f2.to(self.head_dtype))], dim=-1)
+            return self.head(feats)
+        if feats.dtype != self.head_dtype:
+            feats = feats.to(self.head_dtype)
+        return self.head(self.norm(feats))
 
     def init_head_bias(self, priors) -> None:
-        """Initialise the output bias to the log-odds of each tag's prior.
-
-        With a 0.26% positive rate a zero bias makes the first many steps
-        nothing but 'predict zero'; starting at the prior skips that.
-        """
+        """Set the output bias to logit(prior); at 0.26% positives a zero bias predicts only zero for many early steps."""
         import numpy as _np
 
         last = None
@@ -111,21 +269,32 @@ class DinoTagger(nn.Module):
 
     # -------------------------------------------------------------- parameters
     def trainable_parameters(self):
-        oft, head = [], []
+        oft, head, blocks = [], [], []
         for m in iter_oft_modules(self.backbone):
-            oft.append(m.oft.weight)
+            if m.oft.weight.requires_grad:
+                oft.append(m.oft.weight)
         head.extend(self.norm.parameters())
         head.extend(self.head.parameters())
-        return oft, head
+        # unfrozen base weights: everything requiring grad that is not an OFT rotation
+        for name, p in self.backbone.named_parameters():
+            if p.requires_grad and not name.endswith("oft.weight"):
+                blocks.append(p)
+        return oft, head, blocks
 
     def adapter_state_dict(self) -> dict:
-        state = {k: v.detach().clone() for k, v in self.named_parameters()
-                 if k.endswith("oft.weight")}
-        state.update({f"head.{k}": v.detach().clone() for k, v in self.head.state_dict().items()})
-        state.update({f"norm.{k}": v.detach().clone() for k, v in self.norm.state_dict().items()})
-        return state
+        # Save all params, not just requires_grad: resume loses unfrozen weights (load
+        # hard-fails when a trainable param is absent). Frozen OFT rotations must survive
+        # forks (freezing preserves value, no reset): a requires_grad filter dropped them,
+        # reload paired a fine-tuned backbone with R=I, micro 0.19 vs 0.58 (live model
+        # fine). Name predicates rot (earlier `".oft." in k` over (name,param) missed).
+        # Frozen base ~86M/129M, file under 2x.
+        # The second tower is excluded: it is re-loaded from disk at construction, never
+        # modified, and saving 93.5M dead weights would double every checkpoint.
+        return {k: v.detach().clone() for k, v in self.named_parameters()
+                if not k.startswith("siglip.")}
 
-    def load_adapter_state_dict(self, state: dict) -> None:
+    def load_adapter_state_dict(self, state: dict, strict: bool = True) -> None:
+        """Load a checkpoint's trainable parameters. `strict=False` keeps absent trainable parameters at their values -- forking needs it: newly unfrozen blocks are absent from the old checkpoint and hold pretrained weights; any other mismatch fails."""
         missing, unexpected = [], []
         own = dict(self.named_parameters())
         for k, v in state.items():
@@ -137,13 +306,17 @@ class DinoTagger(nn.Module):
         for k in own:
             if k not in state and own[k].requires_grad:
                 unexpected.append(k)
-        if missing or unexpected:
+        if missing or (unexpected and strict):
             raise RuntimeError(f"adapter state mismatch: missing={missing[:4]} unexpected={unexpected[:4]}")
+        if unexpected:
+            print(f"[load] {len(unexpected)} newly trainable parameter(s) kept at their "
+                  f"pretrained values (fork)", flush=True)
 
     def count_params(self) -> dict:
-        oft, head = self.trainable_parameters()
+        oft, head, blocks = self.trainable_parameters()
         return {
             "oft": sum(p.numel() for p in oft),
             "head": sum(p.numel() for p in head),
+            "blocks": sum(p.numel() for p in blocks),
             "backbone": sum(p.numel() for p in self.backbone.parameters()),
         }
