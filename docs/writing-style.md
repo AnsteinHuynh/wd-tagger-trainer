@@ -76,7 +76,7 @@ Count with the project tokenizer, never by eyeballing characters:
 
 ```powershell
 cd C:\Users\kerok\apps\wd-tagger-trainer
-C:\Python314\python.exe -c "from tokenizers import Tokenizer;t=Tokenizer.from_file(r'I:\MyApps\LLAMA-Models\DeepSeek-V4.1-Flash\tokenizer.json');s=open(r'docs/benchmark.md',encoding='utf-8').read();print(len(t.encode(s).ids),'tokens',len(s),'chars')"
+C:\Python314\python.exe -c "from tokenizers import Tokenizer;t=Tokenizer.from_file(r'I:\Models\tokenizers\DeepSeek-V4.1-Flash\tokenizer.json');s=open(r'docs/benchmark.md',encoding='utf-8').read();print(len(t.encode(s).ids),'tokens',len(s),'chars')"
 ```
 
 Report before and after with the same command, on the same file, in the same session. A percentage you did not measure is a claim, not a result

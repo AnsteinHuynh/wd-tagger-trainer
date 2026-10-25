@@ -1,0 +1,94 @@
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights:  20%|█▉        | 41/208 [00:00<00:00, 392.54it/s]Loading weights:  43%|████▎     | 89/208 [00:00<00:00, 417.44it/s]Loading weights:  67%|██████▋   | 139/208 [00:00<00:00, 429.03it/s]Loading weights:  90%|████████▉ | 187/208 [00:00<00:00, 447.51it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 453.89it/s]
+[transformers] [1mSiglipVisionModel LOAD REPORT[0m from: I:\Models\siglip2-base-patch16-512
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+[load] head and norm left at init, trunk and adapters copied: adapter state mismatch: missing=['norm.weight', 'norm.bias', 'head.1.weight'] unexpected=[]
+loaded C:\Users\kerok\apps\wd-tagger-trainer\runs\459e2a02\ckpt_step016000.pt
+train cache: 5321713 rows of dim 3072
+256/5321713 rows, 58 img/s
+512/5321713 rows, 89 img/s
+768/5321713 rows, 107 img/s
+1024/5321713 rows, 119 img/s
+1280/5321713 rows, 126 img/s
+1536/5321713 rows, 132 img/s
+1792/5321713 rows, 137 img/s
+2048/5321713 rows, 141 img/s
+2304/5321713 rows, 143 img/s
+2560/5321713 rows, 146 img/s
+2816/5321713 rows, 148 img/s
+3072/5321713 rows, 149 img/s
+3328/5321713 rows, 151 img/s
+3584/5321713 rows, 151 img/s
+3840/5321713 rows, 153 img/s
+4096/5321713 rows, 153 img/s
+4352/5321713 rows, 154 img/s
+4608/5321713 rows, 159 img/s
+4864/5321713 rows, 159 img/s
+5120/5321713 rows, 159 img/s
+5376/5321713 rows, 163 img/s
+5632/5321713 rows, 163 img/s
+5888/5321713 rows, 163 img/s
+6144/5321713 rows, 166 img/s
+6400/5321713 rows, 166 img/s
+6656/5321713 rows, 166 img/s
+6912/5321713 rows, 169 img/s
+7168/5321713 rows, 169 img/s
+7424/5321713 rows, 169 img/s
+7680/5321713 rows, 172 img/s
+7936/5321713 rows, 171 img/s
+8192/5321713 rows, 171 img/s
+8448/5321713 rows, 173 img/s
+8704/5321713 rows, 173 img/s
+8960/5321713 rows, 172 img/s
+9216/5321713 rows, 174 img/s
+9472/5321713 rows, 174 img/s
+9728/5321713 rows, 174 img/s
+9984/5321713 rows, 175 img/s
+10240/5321713 rows, 175 img/s
+10496/5321713 rows, 175 img/s
+10752/5321713 rows, 176 img/s
+11008/5321713 rows, 176 img/s
+11264/5321713 rows, 175 img/s
+11520/5321713 rows, 177 img/s
+11776/5321713 rows, 176 img/s
+12032/5321713 rows, 176 img/s
+12288/5321713 rows, 177 img/s
+12544/5321713 rows, 177 img/s
+12800/5321713 rows, 176 img/s
+13056/5321713 rows, 178 img/s
+13312/5321713 rows, 177 img/s
+13568/5321713 rows, 177 img/s
+13824/5321713 rows, 178 img/s
+14080/5321713 rows, 177 img/s
+14336/5321713 rows, 177 img/s
+14592/5321713 rows, 178 img/s
+14848/5321713 rows, 178 img/s
+15104/5321713 rows, 177 img/s
+15360/5321713 rows, 179 img/s

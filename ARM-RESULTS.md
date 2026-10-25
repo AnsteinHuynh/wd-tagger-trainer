@@ -82,7 +82,8 @@ Final checkpoint / best_val where the two differ. One change from the control pe
 | 33 large 384 b24x2 | e3c45603 | SigLIP2-L native 384, batch 24 x2 accum, no checkpointing | paused | — | 57-60 img/s at 12.6 GB |
 | 34 large 384 b48 | 56fa4c17 | same at batch 48, no checkpointing | unusable | — | 23.5 GB and 3 img/s, the near-ceiling collapse |
 | 35 large 384 b48 ckpt | 1fee2c4f | same at batch 48, `grad_checkpoint_blocks: true` (all 24) | paused at 902 | — | 54-55 img/s at 4.0 GB, checkpoint save present |
-| 36 large 384 b48 ckpt3 | 8854c266 | same at batch 48, `grad_checkpoint_blocks: 3` | live | — | 68-70 img/s at 22.1 GB, 25% faster than 35 |
+| 36 large 384 b48 ckpt3 | 8854c266 | same at batch 48, `grad_checkpoint_blocks: 3` | 0.1304 / 0.4159 | stopped at 121008 images | 68-70 img/s at 22.1 GB; +18% macro over base u0 at matched 120000 images, 10% behind L-512 at the same effective batch |
+| 37 large 384 b336 ckpt-all | pending | batch 336, all 24 wrapped, `lr_oft` 5e-4, 1786 steps | live | — | the batch ladder, filling to about 20 GB |
 
 Orphaned and non-arm directories: `9cc009da` and `cf852a8c` hold partial logs reaped at step 624 with no step checkpoint and no `validation.json` (the gamma change and its pre-gamma twin); `671e6989` is a smoke directory, batch 4, 205 steps, seed 4242, no score worth quoting; `feb17953` is a dead hash from a doubled-backslash path that names nothing
 
@@ -434,7 +435,7 @@ max-autotune looked like +19% then and +3% now because it is a forward win: eage
 
 The per-block ladder over-predicts by 25 img/s once an adapter sits inside the tower, because backward still traverses eleven frozen blocks to deliver gradients to their rotations and a flat ~28 ms compiled-optimizer dispatch runs over 73 adapter tensors: at one unfrozen block the ladder predicts 155 and the measurement is 130. The 160 img/s frozen figure applies to a tower with no adapters inside it, which is `runs/_wide_head.log` and nothing we train deliberately
 
-Measured arms: u1 base 130 img/s at 16.8 GB, u12 109-116 at 20.4 GB, frozen second tower 106 at 17.1 GB, SigLIP2 base 138 at 15.8 GB, 384 160-171 at 9.1 GB, large batch 20 39-41 at 18.6-19.2 GB, a4674fbd 43 at 21.1 GB, main run 116-122 at 15.8 GB. A per-window 98-99 img/s is 94.7 img/s over a full epoch once the 4.4 s validation is counted, and a second CUDA context on this card costs the trainer about 45%, so a full pass over 5.32M images reads ~15.5 h at 95 img/s, not the 9.2 h the 160 number suggests
+Measured arms: u1 base 130 img/s at 16.8 GB, u12 109-116 at 20.4 GB, frozen second tower 106 at 17.1 GB, SigLIP2 base 138 at 15.8 GB, base-384 132-160 at 9.1 GB (median 140 on 2026-10-23), large-384 57-69 (never 160: that row was base all along), large batch 20 39-41 at 18.6-19.2 GB, a4674fbd 43 at 21.1 GB, main run 116-122 at 15.8 GB. A per-window 98-99 img/s is 94.7 img/s over a full epoch once the 4.4 s validation is counted, and a second CUDA context on this card costs the trainer about 45%, so a full pass over 5.32M images reads ~15.5 h at 95 img/s, not the 9.2 h the 160 number suggests
 
 Long run: 110870 steps at 114.2 img/s = 13.5 h, at 134.4 = 11.0 h, at 160 = 9.2 h
 
@@ -586,6 +587,33 @@ A 2.07x macro gap cannot be closed by recalibration: the per-tag oracle's 31.6% 
 
 The retired sweep driver and its four helpers are deleted; do not rebuild them. It died 50 minutes in when the registry cleared (h2 stopped at step 620, GPU idle), a command-line self-match made the launcher see itself and exit, and PowerShell kept `$m`/`$dir` from the previous iteration so arms with no log inherited the last arm's run directory and were skipped as already scored. A driver that is scoring between arms looks identical to nothing happening
 
+## Optimizer switches at the three trainable groups
+
+Only three things train: the 70 OFTv2 adapter tensors, the head, and the one unfrozen block. Every arm below is base-384, micro batch 48, no accumulation, 200000-image cosine, and differs only in which of those three groups receives the switch. Step 1000 means 48000 images and the in-run 10000-image check; 50k means the separate fixed-0.40 protocol on a finished arm. The two instruments are not comparable to each other.
+
+| switch | unfrozen block | adapters | head | read at | macro | micro | arm |
+| none | plain | plain | plain | 50k | 0.1498 | 0.4369 | 49 |
+| none | plain | plain | plain | step 1000 | 0.0559 | 0.4386 | 49 |
+| ntm only | on | on | on | step 1000, lr 5e-4 | 0.0079 | 0.4193 | 45 |
+| ntm + snr | on | on | on | step 1000, lr 5e-4 | 0.0085 | 0.4277 | 46 |
+| ntm + snr | on | on | on | step 1000, matched 2.61e-4 | 0.0067 | 0.4003 | 59 |
+| ntm + snr | plain | on | plain | step 1000, lr 5e-4 | 0.0631 | 0.4601 | 57 |
+| ntm + snr | plain | on | plain | step 1000, all rates halved | 0.0427 | 0.4638 | 62 |
+| ntm + snr | plain | on | plain | 50k, adapter 1.9x hot | 0.1555 | 0.4358 | 57 |
+| ntm + snr | plain | on | plain | 50k, adapter matched | 0.1545 | 0.4338 | 71 |
+| ntm + snr | plain | plain | on | not run | | | |
+| ntm + snr | on | on | plain | not run | | | |
+| spectral | on | on | on | step 1000, 5e-4 untagged | 0.0004 | 0.1788 | 64 |
+| spectral | on | on | on | step 1000, 5e-4 tagged | 0.0007 | 0.2066 | 64b |
+| spectral | on | on | on | step 1000, tagged and per-group rates | 0.0078 | 0.3802 | 70 |
+| spectral | plain | on | plain | not run | | | |
+| spectral | plain | plain | on | not run | | | |
+
+The head is the poison and that is now measured rather than inferred: every row with the head switched on sits at 0.008 or below, every row with the head plain sits at 0.06 at step 1000 and 0.155 at 50k. Normed momentum forces each of the 12476 head rows to equal RMS, which flattens tag frequency, and matching the throttle does not rescue it because the damage is directional rather than a scale.
+
+The couple scoped to the adapters is worth 0.0047 macro on the 50k at matched displacement and 0.0057 when the adapters run 1.9x hot, so the gain is the geometry and not the hotter rate. Both cost about 0.003 micro. The margin is thin and is why the production run is being used as the confirmation rather than trusted on the ablation alone.
+
+Spectral was only ever tested on all three groups, because it lost by 7x at its best calibration and scoping it would have been a fourth variation on a removed switch. The tag `_is_oft` matters for it as well: untagged, the optimizer treats a (k, C(b,2)) OFT factor as an ordinary matrix and throttles it 66x, tagged it uses the OFT-aware Riemannian path and throttles it 44x. The tag now lives beside the parameter in `wdtag/oft.py`. A tag cannot fix the couple, because `normed_momentum` and `snr_cond` consult only `is_vector` and have no equivalent hook, which is why scoping by parameter group is the only lever that exists for them.
 ## Open decisions
 
 The main run `3da79e14` sits paused at step 15373 of 221739 with its original cosine: resuming costs nothing and cannot be extended, while a warm relaunch under the constant schedule with a taller horizon and a tail at about 15% loses 15000 steps of momentum and buys a schedule that can be lengthened. Leaning to the relaunch
@@ -611,3 +639,310 @@ If the 1-9 bin is not learnable from nine examples, the remaining spend is label
 A ViT-L full pass is 44.8 hours, and the frozen-feature probe staged to decide capacity became the wrong instrument once SigLIP2 became the base, because it compares a tower family we are abandoning. Precomputing a frozen tower's features is worth the 5.2 hours only when a full 5.32M pass makes the per-step 30% matter; for 10k arms in-loop and precomputed are the same number
 
 An equal-image extension of a promising arm costs 2.1 to 2.9 hours of stepping, and the large tower's 30000-step gate was 4.1 hours; both are cheap next to a 26-hour pass
+
+The debug pictures are exact for a run that starts from step 0 and misleading for one that resumed. `4a13a120`'s hundred pictures begin at pair 24912 of `00166.tar`, which is global sample 2424912 = 50519 x 48, so a resumed streaming run dumps its resume cursor and the manifest records no pass index or offset to say so. Fresh runs verify exactly against the seeded shuffle: seed 1337, pass 0 shuffles to `00023.tar` first, and both `459e2a02` at 512 and `4ec33484` at 384 list the first hundred pair keys of that tar in order, pixel-identical to a fresh decode and squash. Two latent labelling bugs sit beside it, `dump_stream_debug` hardcodes `-squash` into the name while index mode uses the config's mode, and the streaming decoder has no pad branch, so a streamed pad run would be mislabelled. Evidence in `scratch/sophie/debugpics-audit.md`
+
+## The switch by group, at a glance
+
+Legend: 🟢 the switch is on for that group, ⚪ plain SinkSGD for that group, ❔ never run. Only three things train, the 70 adapter tensors, the head and the one unfrozen block; the frozen backbone has no gradients and never reaches the optimizer.
+
+| adapters | head | block | score | instrument | verdict |
+| --- | --- | --- | --- | --- | --- |
+| 🟢 | 🟢 | 🟢 | 0.0085 | step 1000 | 💀 |
+| 🟢 | ⚪ | ⚪ | 0.1545 | 50k | 🥇 |
+| ⚪ | ⚪ | ⚪ | 0.1498 | 50k | 🥈 |
+| ⚪ | 🟢 | ⚪ | — | — | ❔ |
+| ⚪ | ⚪ | 🟢 | — | — | ❔ |
+| 🟢 | 🟢 | ⚪ | — | — | ❔ |
+| 🟢 | ⚪ | 🟢 | — | — | ❔ |
+
+🥇 is the best measured configuration, the couple scoped to the adapters, worth 0.0047 macro over plain 🥈. 💀 is what happens the moment the head is included. The four ❔ are untested, and the one that matters is the last row, adapters plus block with the head off, because it is the only cell that could move 🥇 and it costs nine minutes of card time.
+
+The 💀 row is a step-1000 reading and the two medal rows are full 50k readings, so the comparison between them is qualitative rather than a ratio. Like for like at step 1000, plain reads 0.0559 and the couple everywhere reads 0.0085.
+Nesterov was the last of the eight gold switches with no clean test, and it now has one. Same scoped stack as arm 71, same adapter rate 2.61e-4, same seed, differing only in `optimizer_nesterov`, both read from their step-1000 checkpoint with the same 50k protocol so the instrument is identical on both sides.
+
+| arm | nesterov | macro at 0.40 | micro at 0.40 | macro P / R |
+| 71 | off | 0.0684 | 0.3784 | 0.0801 / 0.1107 |
+| 75 | on | 0.0677 | 0.3713 | 0.0783 / 0.1127 |
+
+Nesterov costs 0.0007 macro and 0.0071 micro, which is a wash on macro and a small consistent loss on micro, and the loss repeats at both 10000 and 50000 images so it is not subset noise. Because the displacement measurement put nesterov at 1.000 against plain, this cannot be a throttle artefact, which makes it the one gold switch whose test is unambiguous: it does nothing here, and if anything it slightly hurts. Leave it off.
+
+Three more switches resolved, all read from their step-1000 checkpoint with the same 50k protocol against the same control, so every number in this table is one instrument. Control is arm 71, the couple scoped to the adapters at 2.61e-4 with nothing else on.
+
+| switch | macro at 0.40 | micro at 0.40 | arm |
+| control, nothing extra | 0.0684 | 0.3784 | 71 |
+| orthogonal_gradient iterative | 0.0686 | 0.3789 | 76 |
+| orthogonal_gradient flattened | 0.0687 | 0.3785 | 77 |
+| orthogonal_sinkhorn | 0.0583 | 0.3628 | 78 |
+| nesterov | 0.0677 | 0.3713 | 75 |
+
+Orthogonal gradient does nothing here, in either mode, to three decimal places on both metrics, and the two modes are indistinguishable from each other as well as from the control. That is worth knowing rather than disappointing: it is the switch with the best theoretical case in the bundle, and on a rank-6 OFT factor it has nothing to work with, because there is no large matrix whose singular directions need flattening. The CPU probe agrees, both modes landing within 3 percent of each other in step size on a (6, 8128) factor.
+
+Orthogonal sinkhorn is harmful, 0.0101 macro and 0.0156 micro below control, which is the same 15 percent relative loss it shows at 10k. It is the one switch in this group that changes the result and it changes it for the worse, which fits the mechanism: Sinkhorn balances the row and column marginals of the update, and on an adapter factor the columns are block coordinates with wildly different fan-in, so balancing them mixed statistics that are not comparable.
+
+Two caveats. Every arm here sits at 2.61e-4 while orthograd and sinkhorn reduce the step by 10 percent on this shape by the CPU probe, so their true effect at matched displacement is 10 percent understated, which cannot rescue the sinkhorn result and does not make orthograd visible. And these are single-seed, single-checkpoint readings at 48000 images, so differences under about 0.004 are not differences, which is exactly why orthograd reads as zero rather than as a small win.
+
+
+## The four untested corners, filled in
+
+Two arms closed the matrix, one of them changed the recipe. Same config as the adapters-only control, same seed, same 2.61e-4, differing only in which groups the couple reaches. The scope is now a config field, `optimizer_switch_groups`, any subset of "oft", "block" and "head", with `optimizer_oft_only` kept as the older spelling of ["oft"].
+
+| switch groups | step-1000 macro | step-1000 micro | 50k macro | 50k micro | arm |
+| plain, nothing on, lr 5e-4 | 0.0557 | 0.4420 | 0.0596 | 0.3463 | 82 |
+| head only | 0.0098 | 0.4382 | 0.0097 | 0.3830 | 79 |
+| block only | 0.0643 | 0.4539 | 0.0693 | 0.3640 | 80 |
+| adapters only | — | — | 0.0684 | 0.3784 | 71 |
+| adapters + block | 0.0676 | 0.4660 | 0.0741 | 0.3859 | 81 |
+
+Every row is now on the same instrument, the step-1000 checkpoint scored by the fixed 0.40 protocol over 50000 images. Plain at 5e-4 is the displacement-matched control for a couple running at 2.61e-4, because the couple itself moves the weights 1.916x further at equal rate.
+
+Against that control, adapters plus block is worth 0.0145 macro and 0.0396 micro, adapters alone 0.0088 and 0.0321, block alone 0.0097 and 0.0177, and head alone is worth minus 0.0499 macro while gaining 0.0367 micro, which is the frequency prior traded away for bulk. The margin that matters, adapters plus block over adapters alone, is 0.0057 macro and 0.0075 micro.
+
+The head-only arm is the clean proof of the mechanism that had only been inferred: with the couple on the head alone and nothing else, macro falls from 0.0559 to 0.0098 while micro moves 0.4386 to 0.4382, a collapse of macro with micro untouched. That is the signature of a deleted frequency prior rather than a damaged model, and it is the same signature the everywhere arms showed.
+
+The block likes the couple. Block only beats plain on both metrics, and adapters plus block beats adapters only by 0.0057 macro and 0.0075 micro on the 50k. That margin sits inside the 0.0093 wide bootstrap interval for macro at 50k, so it is not certain on its own, but it points the same way on both instruments and the mechanism predicted it: block rows are channels, which are interchangeable in the way adapter blocks are.
+
+Production was switched to `optimizer_switch_groups: ["oft", "block"]` with `optimizer_oft_only` off, and the block rate divided by the measured 1.400x displacement the couple adds on a 768 by 768 tensor, 7.2e-5 to 5.14e-5, so the effective step is unchanged.
+
+
+Production checkpoint 8083, scored on the fixed 50k protocol: macro F1 0.3568, MCC 0.3796, precision 0.3170, recall 0.5044, micro F1 0.4929. That is 0.0253 macro and 0.0160 micro above the step-6040 reading of 0.3315 and 0.4769, over 2043 steps, at 3.1 million images seen. Against the bar it is 63.9 percent of macro, 67.1 percent of MCC, 94.6 percent of recall and 51.1 percent of precision, so the whole remaining gap is precision rather than coverage.
+
+## Production extended to two epochs
+
+At step 9457 the run was extended from 13859 steps to 27718, one full epoch to two, 10643426 images. Cosine could not simply be stretched: with the phase anchored at step 0 the rate at 9457 over the longer horizon is 4.79e-4, a 2.7x re-heat nobody chose. So `lr_at` gained a `start_step` anchor and `lr_cosine_start` a config field, and the new cycle measures its phase from 9400 while keeping the rate the run was already using, 1.79e-4 adapter, 1.47e-5 block, 8.23e-5 head, all three scaled by the same 0.286 factor so the measured displacement ratios survive.
+
+Measured continuity: the old schedule gave 1.72e-4 at that step and the anchored one gives 1.790e-4, a 4 percent step up and the only discontinuity in the whole change. The scheduled dose over the extension is 2.1 LR-step units against roughly 0.23 left in the old cosine, so the extension alone is already a ninefold increase in remaining learning; that is why no second re-heat was stacked on top.
+
+Falsifier agreed before the change, to be read at step 11000: 10k macro at or above 0.348, precision up at least 0.004 over the step-9000 reading, micro at or above 0.578. If macro is below 0.344 on two consecutive validations, or precision falls while recall rises, or micro drops under 0.575, the no-reheat choice was wrong and the next cycle should re-heat. Separately, adapter singular values should be checked for saturation at each checkpoint, p99 and max rather than median.
+
+## The scoping override was incomplete, and two verdicts are withdrawn
+
+Found while answering "are the other switches also avoiding the head". They were not. The plain override that `optimizer_oft_only` wrote into excluded groups covered only four switches, normed momentum, snr, spectral and orthogonal gradient. Nesterov, orthogonal sinkhorn, geometric weight decay and cautious weight decay were never in it, so a run with any of those switched on globally kept applying them to the head and the block even with scoping requested.
+
+That invalidates two rows above. Arm 75 ran nesterov with `optimizer_oft_only`, so the head and block received nesterov on top of their plain updates, and its 0.0007 macro and 0.0071 micro "cost" was the head reacting rather than the switch. Arm 78 ran orthogonal sinkhorn the same way, and its 0.0101 macro and 0.0156 micro loss was likewise the head, which is exactly what the head-only arm 79 measured independently at minus 0.0499 macro.
+
+The override now covers all eight switches. Re-run scoped to adapters and block, head genuinely plain, read at step 1000 in-run and compared with arm 81 as control at 0.0676 macro and 0.4660 micro:
+
+| arm | change | macro | micro | at 0.40 |
+| --- | --- | --- | --- | --- |
+| 81 | control | 0.0676 | 0.4660 | 0.0705 |
+| 83 | nesterov | 0.0677 | 0.4654 | 0.0702 |
+| 84 | orthogonal sinkhorn | 0.0679 | 0.4647 | 0.0702 |
+| 85 | orthogonal sinkhorn plus flattened orthograd | 0.0674 | 0.4642 | 0.0704 |
+
+Both switches are neutral. Nesterov stays off because it costs 3 percent of throughput for nothing, and orthogonal sinkhorn stays off because it costs 5.9 percent for nothing. Neither is harmful, and the earlier verdicts are struck rather than deleted because the failure mode — a scoping mechanism that silently excluded four of the eight switches — is the thing worth remembering.
+
+The orthogonal gradient arms 76 and 77 are unaffected, because that switch was one of the four the old override did cover, so the head genuinely ran plain in those arms and their null result stands.
+
+## Label omission, and the arms that try to tolerate it
+
+The labels are human. A missing tag means either the tag is absent or the annotator did not bother, and our loss treats both as hard negatives, so it teaches the model to suppress tags that belong on the image. The user's rule for this work: the bar may be measured as a diagnostic but its predictions never enter training, because a win that used the competitor as a teacher is not a win.
+
+What the bar says about the labels, measured on 20000 training images with the bar at batch 16 and reported as a diagnostic only. Of the cells the bar scores at or above 0.5, 40.3 percent are unannotated; at 0.7, 27.5 percent; at 0.9, 14.7 percent. At the highest confidence the bar is rarely wrong, so the omission floor is several percent of everything it is sure about. The npz and script are in scratch/sophie (omission_prior.py, omission_prior.npz).
+
+The co-occurrence estimator is a dead end and worth recording as one. Counting P(t | u) over the 50k validation labels and keeping only pairs with P at or above 0.5 and lift at or above 2 leaves 14183 pairs across 12454 tags, about one usable partner per tag. Omission destroys its own estimator: the co-occurrence counts that would reveal dropping are themselves depressed by dropping. So with the bar excluded by rule, no label-only prior is strong enough to weight a loss.
+
+The treatment that needs no external model at all is to let the model relax its own confident negatives. `loss_neg_relax_thr` and `loss_neg_relax_alpha` scale the loss on any negative whose predicted probability already exceeds the threshold by (1 - alpha). If omission is the reason our precision is 51 percent of the bar, forgiving the cells the model is confident about but the label denies should raise precision and macro together. Risk stated in advance: it is self-referential, since confidence selects what gets forgiven, and alpha 1.0 with no bound could drift toward predicting everything.
+
+| arm | loss | thr | alpha | images | micro x accum | effective |
+| --- | --- | --- | --- | --- | --- | --- |
+| 86 | asl, control | - | - | 500000 | 96 x 4 | 384 |
+| 87 | asl plus relaxation | 0.5 | 0.5 | 500000 | 96 x 4 | 384 |
+| 88 | asl plus full relaxation | 0.5 | 1.0 | 500000 | 96 x 4 | 384 |
+
+All three at base-384, 1303 steps, scored on the fixed 0.40 protocol over 50000 images. The 500000-image budget is 2.5 times the 200000 arms so rare tags get more positives, and effective 384 matches production so the result transfers rather than needing a second confirmation at a different batch.
+
+Results, 2026-10-25 01:55. All three arms at base-384, micro 96 x accum 4, effective 384, 500000 images, 1303 steps, scored at the final checkpoint on the fixed 0.40 protocol over 50000 images.
+
+| arm | loss | macro | MCC | precision | recall | micro |
+| --- | --- | --- | --- | --- | --- | --- |
+| 86 control | asl | 0.2221 | 0.2364 | 0.2351 | 0.2815 | 0.4255 |
+| 87 relax 0.5 | asl plus relaxation | 0.2196 | 0.2366 | 0.2227 | 0.3016 | 0.3990 |
+
+The omission hypothesis is falsified at this dose. Relaxing the model's own confident negatives raised recall by 0.0201 exactly as the mechanism predicted and lowered precision by 0.0124 instead of raising it, so the confident negatives were overwhelmingly correct absences rather than human omissions. Macro falls 0.0025, inside the 0.0093 interval, and micro falls 0.0265, well outside its 0.0016 interval. MCC is unchanged at 0.2365, which says the two arms sit at slightly different operating points on the same-quality model rather than one being better.
+
+Arm 88, full relaxation at alpha 1.0, was not run and should not be: it pushes the same trade further in the direction that costs micro.
+
+The in-run 10000-image validation at step 1000 read 0.1683 macro for the treatment against 0.1611 for control, a 0.0072 win that inverted on the 50k at the final checkpoint. That is the third time tonight the 10k in-run number and the 50k disagree in sign, and the reason the doc's rule is that the 50k decides.
+
+One negative result worth carrying: an omission-tolerant loss is not the answer to a precision deficit of 0.23 against the bar's 0.62. Ours is not that we are too harsh on tags that belong on the image, because the model's own confident negatives are right.
+
+## Recalibration at the fixed threshold, measured 2026-10-25
+
+The protocol scores at 0.40 and the model prefers 0.50, so part of our macro is being spent on a mismatch between where our probabilities sit and where the threshold sits. A single temperature on the logits is monotone and changes nothing about the ranking, only where 0.40 falls.
+
+Fitted on the first 25000 images of the 50k, judged on the other 25000, using production checkpoint 8083:
+
+| statistic | macro on the held-out half |
+| --- | --- |
+| T = 1.00, no change | 0.3465 |
+| T = 0.45 | 0.3652 |
+| T = 0.25, the edge of the grid | 0.3686 |
+
+That is up to +0.0221 macro for one scalar, about two and a half times the 0.0093 interval at 50k. The gain is monotone as T falls to the grid edge, which says the optimum is not a soft temperature at all: it is equivalent to moving the decision boundary to logit zero, which is the 0.50 optimum the run's own validation had been reporting all night. Sharpening is simply a legal way to reach it, because the metric fixes 0.40 but not the units the model emits.
+
+Honesty requirement before this is ever used for a reported number: the fit above used validation images, and the validation set is what the project is scored on, so fitting on half of it and quoting the other half is honest as an experiment and not honest as a final result. The legitimate routes are to fit the temperature on the training split or a disjoint validation slice, or better, to bake the calibration into training so the model's own 0.40 lands at its optimum without any post-hoc step.
+
+A crude per-tag bias attempt made things worse, 0.3505 against 0.3686, and should not be trusted: the update was a hand-rolled Newton step with no line search, so the number says more about the code than about per-tag calibration. Struck 2026-10-25 02:30: that verdict was about a shift-only model, and it was the code, not the idea.
+
+Redone properly, with a grid search per tag over a bias in [-3, 3] at 0.25 spacing, shrunk toward zero for tags with fewer than 200 positives, and judged on the held-out half:
+
+| model | held-out macro |
+| --- | --- |
+| uncalibrated | 0.3465 |
+| global shift, bias -1.0 | 0.3388 |
+| per-tag bias, no temperature | 0.3601 |
+| temperature 0.25 only | 0.3686 |
+| temperature 0.25 plus shrunk per-tag bias | 0.3737 |
+
+So the scale and the per-tag shift stack, +0.0272 in total against no calibration, which is about three noise intervals. The bias distribution is real structure: median -1.50, p10 -3.00, p90 +1.75, spread 1.90 at the chosen temperature. The gap between the fit-half oracle, 0.4671, and the held-out 0.3737 is the overfit that the shrinkage is paying for, and it is the reason a post-hoc table of 12476 biases is a research result rather than a shipping plan.
+
+
+### Production 2-epoch series, in-run 10000-image validation
+
+| step | macro | MCC | micro | best_thr | macro at fixed 0.40 |
+| --- | --- | --- | --- | --- | --- |
+| 9000 | 0.3374 | 0.3490 | 0.5823 | 0.50 | 0.3210 |
+| 10000 | 0.3409 | 0.3508 | 0.5906 | 0.50 | 0.3259 |
+| 11000 | 0.3430 | 0.3531 | 0.5905 | 0.50 | 0.3268 |
+| 12000 | 0.3469 | 0.3567 | 0.5918 | 0.50 | 0.3324 |
+| 13000 | 0.3481 | 0.3579 | 0.5875 | 0.50 | 0.3320 |
+| 14000 | 0.3500 | 0.3596 | 0.5951 | 0.50 | 0.3374 |
+| 15000 | 0.3507 | 0.3603 | 0.5928 | 0.50 | 0.3373 |
+| 16000 | 0.3532 | 0.3630 | 0.5919 | 0.50 | 0.3375 |
+
+Step 11000 against the falsifier read declared at 9000: macro 0.3430 is below the 0.348 target, micro 0.5905 clears its 0.578 floor, and macro sits under 0.344 for the first time, which is one of the two consecutive strikes that would call the extension off. Micro has flattened across 10000 and 11000 at 0.5905 against 0.5906 while macro still creeps up 0.0021 per thousand steps, so the shape is macro still paying and micro plateaued, which is the opposite of a collapse but not a win either.
+
+### Why the fixed 0.40 costs what it costs, measured 2026-10-25
+
+Threshold curve of production checkpoint 8083 on the 50k. The MCC column is omitted because my script overflowed int64 and printed garbage there; macro, precision, recall and micro are sound.
+
+| threshold | macro | precision | recall | micro | predicted tags per image |
+| --- | --- | --- | --- | --- | --- |
+| 0.30 | 0.2864 | 0.2183 | 0.6073 | 0.3474 | 131.3 |
+| 0.35 | 0.3271 | 0.2686 | 0.5533 | 0.4262 | 95.4 |
+| 0.40 | 0.3569 | 0.3171 | 0.5045 | 0.4929 | 72.9 |
+| 0.45 | 0.3747 | 0.3636 | 0.4593 | 0.5457 | 57.7 |
+| 0.50 | 0.3824 | 0.4068 | 0.4188 | 0.5837 | 46.9 |
+| 0.60 | 0.3676 | 0.4705 | 0.3446 | 0.6184 | 32.1 |
+
+The validation truth is 32.3 labels per image. At the scored threshold the model emits 72.9, an over-prediction of 2.3 times, and that excess is the entire precision deficit. Macro peaks at 0.50 at 0.3824, so the fixed threshold costs 0.0255 macro and 0.09 micro on this checkpoint. Micro keeps rising to 0.60, which says our ranking is better than our calibration everywhere above 0.40 and that the calibration is the binding constraint, not the features.
+
+Second implication, for training rather than scoring: the head bias is initialised at logit(prior) and the loss then drives the model far past the true positive rate. A loss or bias schedule that kept the predicted count near 32 per image would move 0.40 to where the model's own optimum already is, which is worth more than every optimizer switch we have tested combined.
+
+
+
+
+
+### OFT rotation has plateaued, measured at 9457 and 13000
+
+| checkpoint | median rotation | p90 | p99 | max | angle median | blocks over 0.5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 9457 | 0.2816 | 0.4229 | 0.6771 | 0.8977 | 31.5 deg | 31 of 690 |
+| 13000 | 0.2788 | 0.4238 | 0.6656 | 0.8843 | 31.2 deg | 31 of 690 |
+
+3543 steps apart, every quantile within a thousandth. The adapters reached their operating point before 9457 and have not moved since, so the OFT is no longer the part of the model that is learning and no amount of extra adapter steps will change that. The per-module ordering is still the expected one: head mlp fc2 at median 0.658, then fc1 at 0.587, then layer 10 fc2 at 0.442, layer 9 at 0.423, layer 8 at 0.416, so the rotation decays with depth as it should and the deepest unfrozen layer carries the most.
+
+Consequence for planning: more capacity has to come from unfrozen blocks or a larger backbone, never from asking the adapters to work harder. The remaining macro movement in the production run is coming from one block and the head, and 0.0012 per thousand steps is what that is worth.
+
+
+
+### Production 50k readings across the run
+
+| checkpoint | step | macro | MCC | precision | recall | micro |
+| --- | --- | --- | --- | --- | --- | --- |
+| 459e2a02 | 8083 | 0.3568 | 0.3796 | 0.3170 | 0.5044 | 0.4929 |
+| 459e2a02 | 14000 | 0.3841 | 0.4045 | 0.3413 | 0.5226 | 0.5103 |
+| 16000 | 0.3840 | 0.4052 | 0.3357 | 0.5314 | 0.5042 |
+
+Six thousand steps of the second epoch bought 0.0273 macro, 0.0249 MCC, 0.0243 precision, 0.0182 recall and 0.0174 micro on the 50k instrument, with the gap to the bar narrowing from 0.2011 to 0.1738 macro. Precision is rising faster than recall now, which is the shape the calibration work predicted the anneal would produce.
+
+### Where the over-prediction actually goes, measured on checkpoint 14000
+
+At 0.40 the model emits 69.4 tags per image while the labels hold 32.3. Split by whether the bar agrees, using it strictly as an instrument:
+
+| cell | per image |
+| --- | --- |
+| labelled positive, correct | 26.0 |
+| unlabelled, bar at or above 0.9 | 1.3 |
+| unlabelled, bar 0.5 to 0.9 | 4.7 |
+| unlabelled, bar below 0.5 | 37.5 |
+
+Only 13.7 percent of the unmatched predictions are supported by a stronger independent reader, so 86 percent are our own over-prediction rather than human omission. The honest ceiling on complete annotation is therefore about 38 tags per image, the 32.3 labelled plus roughly 6 plausible omissions, not 73. This closes the question the relaxed-loss arm raised from the other side and gives the same answer: our problem is not that humans under-annotate, it is that we emit predictions we do not believe.
+
+Script scratch/sophie/fp_decomposition.py.
+
+### The macro gap lives in relational and semantic tags, measured 2026-10-25
+
+Per-tag F1 on the 50k at 0.40 for tags that need composition rather than detection. Support is the label count in the 50k.
+
+| tag | support | ours | bar |
+| --- | --- | --- | --- |
+| mother_and_daughter | 99 | 0.226 | 0.589 |
+| siblings | 709 | 0.252 | 0.689 |
+| sisters | 389 | 0.273 | 0.706 |
+| twins | 213 | 0.377 | 0.748 |
+| brother_and_sister | 198 | 0.233 | 0.622 |
+| brothers | 89 | 0.214 | 0.663 |
+| dual_persona | 289 | 0.217 | 0.493 |
+| step-siblings | 7 | 0.000 | 0.727 |
+
+Two facts together. The bar is two to three times better on every one, and on the rarest it finds tags we never predict. And our model over-fires on the same tags: 2963 predictions on siblings against 709 labels, 398 on brothers against 89, 69 on dark_persona against 60 with F1 0.140. We detect the component concepts, two people and a family resemblance, without composing the relation, so we emit the relational tag whenever the parts appear.
+
+This is why the relaxed-loss arm failed in the direction it did. The class where humans genuinely omit tags is the same class where we fire blind, so forgiving confident negatives there amplifies noise instead of recovering truth, which is exactly the recall-up precision-down result it produced.
+
+Consequence for design: this gap is representational, not a loss or calibration problem. A single linear projection over pooled SigLIP2 features has no feature for a relation between two people, and no loss conjures one. The levers are unfrozen depth where composition can happen, or a head with a hidden layer. Neither has been tested at production scale.
+
+Script scratch/sophie/semantic_tags.py.
+
+### The deficit is uniform in frequency, so resampling the tail cannot fix it
+
+Per-tag F1 on the 50k at 0.40, binned by label support, our checkpoint 14000 against the bar.
+
+| support | tags | ours | bar | gap |
+| --- | --- | --- | --- | --- |
+| 1 to 9 | 4641 | 0.371 | 0.558 | 0.187 |
+| 10 to 49 | 5093 | 0.391 | 0.561 | 0.170 |
+| 50 to 199 | 1682 | 0.368 | 0.532 | 0.164 |
+| 200 to 999 | 779 | 0.406 | 0.565 | 0.159 |
+| 1000 to 4999 | 208 | 0.525 | 0.671 | 0.146 |
+| 5000 to 19999 | 47 | 0.628 | 0.749 | 0.121 |
+| 20000 and up | 4 | 0.858 | 0.912 | 0.054 |
+
+Our F1 is flat from five positives to five hundred, correlation with log support 0.081, and the bar is flat over the same range before climbing where we climb. A near constant 0.15 to 0.19 gap across every frequency band is a capability gap, not a scarcity gap, and it is why the existing loss and optimizer ablations all came back neutral: they were rearranging a deficit that does not depend on how often a tag is seen.
+
+This settles the oversampling question. Curating rare images into the batch fixes a scarcity problem we do not have, and it corrupts the marginal image distribution, which risks the common tags that micro measures. If tail bias is wanted at all, per-tag loss weighting does it without touching sampling, but it fights the same uniform gap.
+
+Script scratch/sophie/support_vs_f1.py.
+
+### Arm A against arm B: per-tag rate matching branched from checkpoint 13000
+
+Both arms resumed from `459e2a02/ckpt_step013000.pt`, ran 1000 steps to 14000 on the same pass, effective 384, identical except the loss. Arm B added a per-tag logit bias updated every step as `bias += eta * (label_rate - predicted_rate) * 8`, eta 2.0, clipped to plus or minus 6, the controller that measured 0.3781 against 0.3686 in the offline simulation.
+
+In-run 10000-image validation at 14000, the same instrument for both:
+
+| arm | macro | micro | macro at fixed 0.40 | best threshold | gap |
+| --- | --- | --- | --- | --- | --- |
+| A | 0.3500 | 0.5951 | 0.3374 | 0.50 | 0.0126 |
+| B | 0.3449 | 0.5969 | 0.3382 | 0.50 | 0.0067 |
+
+50k protocol:
+
+| arm | macro | MCC | precision | recall | micro |
+| --- | --- | --- | --- | --- | --- |
+| A | 0.3841 | 0.4045 | 0.3413 | 0.5226 | 0.5103 |
+| B | 0.3571 | 0.3815 | 0.3104 | 0.5185 | 0.5181 |
+
+DEFECT IN MY PATCH, recorded so it is not repeated: the calibration bias was never saved into the checkpoint, only the weights. Because the bias was live during training, B's weights drifted about +5.3 logits to compensate, so the checkpoint alone fires on 8296 tags per image and its first 50k reading was garbage, macro 0.0144 with recall 0.9945. Scoring B required re-deriving the bias by replaying the same controller over 20000 fresh training images, which saturated at the clip (median -6.00, p95 -3.83). That reconstruction is probably more aggressive than the bias B actually held at 14000, which is why the 50k gap between the arms, 0.0270, is three times the in-run gap of 0.0051.
+
+The mechanic that was supposed to work did work: the gap between the fixed-0.40 reading and the best-threshold reading fell from 0.0126 to 0.0067. Struck 2026-10-25 08:00 after an independent audit: 86 percent of that closure came from B's best-threshold macro falling 0.0051, only 14 percent from the fixed-0.40 reading rising 0.0008, and the best threshold stayed at 0.50 for both arms. The optimum did not move toward the scored threshold; rate matching flattened the curve instead of relocating its peak, so the apparent closure is not the mechanism working.
+
+Struck, same audit, two more claims of mine. The statement that B trades precision for recall is wrong: both fell, precision 0.3413 to 0.3104 and recall 0.5226 to 0.5185, which is not a trade but a general loss. And "three times the in-run gap" understated it: 0.0270 against 0.0051 is 5.3 times, not three.
+
+Verdict from the audit, adopted: resume arm A. Arm B's 50k number is not an arm score at all, because the bias was lost and then refitted on fresh training images, so it measures B's weights plus a new calibration rather than the arm that ran. The only clean contrast is the in-run 10000, where the deltas are 0.25, 0.04 and 0.5 times their own noise intervals, which is a tie with B slightly worse on macro. A is the only arm holding a valid protocol score, and B's sole large-sample advantage is micro, the column most easily dominated by the thousand common tags.
+
+The audit also priced B's reconstruction: applying A's 10k-to-50k lift of 0.0467 to B's true-bias 10k reading gives 0.3849, which would make the reconstructed 0.3571 about 0.0278 too low and the observed 0.0270 gap essentially all reconstruction artefact. That is an upper bound built on an assumption, not a measurement, and even then B only reaches a tie. A clean answer to B requires rerunning it with the bias saved in the checkpoint, which is now a hard requirement on the patch.
+
+
+
+

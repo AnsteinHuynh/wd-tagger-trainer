@@ -1,0 +1,5 @@
+per-tag best bias on the fit half: macro 0.4798
+bias shrunk for tags under 200 positives; tags with 0 positives 278
+eval half: uncalibrated 0.3465  global bias -1.0 0.3388  per-tag shrunk 0.3601
+per-tag over global: +0.0213
+bias distribution: median -0.50, p10 -2.25, p90 0.75, spread 1.15

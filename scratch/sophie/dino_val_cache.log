@@ -1,0 +1,16 @@
+Loading weights:   0%|          | 0/415 [00:00<?, ?it/s]Loading weights:  74%|███████▍  | 307/415 [00:00<00:00, 3063.66it/s]Loading weights: 100%|██████████| 415/415 [00:00<00:00, 3153.09it/s]
+no checkpoint in the run directory: caching the raw backbone
+C:\Users\kerok\apps\wd-tagger-trainer\wdtag\cache_features.py:102: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\torch\csrc\utils\tensor_numpy.cpp:214.)
+  probe = torch.from_numpy(np.ascontiguousarray(images[:1])).to(device)
+validation cache: 50000 rows of dim 2048
+5024/50000 rows, 71 img/s
+10016/50000 rows, 71 img/s
+15008/50000 rows, 71 img/s
+20000/50000 rows, 71 img/s
+25024/50000 rows, 71 img/s
+30016/50000 rows, 71 img/s
+35008/50000 rows, 71 img/s
+40000/50000 rows, 71 img/s
+45024/50000 rows, 71 img/s
+50000/50000 rows, 71 img/s
+valid cache done

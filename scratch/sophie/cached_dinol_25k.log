@@ -1,0 +1,33 @@
+train rows 25000 val rows 50000 dim 2048 labels 12476
+train sources ['']
+head linear, 25.6M parameters
+C:\Users\kerok\apps\wd-tagger-trainer\wdtag\train_cached.py:158: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:821.)
+  run_loss += float(loss)
+ep 0 step 20/288 loss 0.0400 lr 1.25e-03 1286 rows/s
+ep 0 step 40/288 loss 0.0230 lr 2.34e-03 1328 rows/s
+epoch 0: macro 0.0212 micro 0.2835 P 0.1885 R 0.5717 MCC 0.3254 tags/img 98.0
+new best macro 0.0212 -> best_head.pt
+ep 1 step 60/288 loss 0.0049 lr 2.69e-03 1243 rows/s
+ep 1 step 80/288 loss 0.0046 lr 2.46e-03 1282 rows/s
+epoch 1: macro 0.0413 micro 0.3068 P 0.2043 R 0.6159 MCC 0.3520 tags/img 97.4
+new best macro 0.0413 -> best_head.pt
+ep 2 step 100/288 loss 0.0037 lr 2.19e-03 1260 rows/s
+ep 2 step 120/288 loss 0.0037 lr 1.89e-03 1279 rows/s
+ep 2 step 140/288 loss 0.0036 lr 1.57e-03 1293 rows/s
+epoch 2: macro 0.0515 micro 0.3209 P 0.2160 R 0.6241 MCC 0.3646 tags/img 93.3
+new best macro 0.0515 -> best_head.pt
+ep 3 step 160/288 loss 0.0033 lr 1.24e-03 1278 rows/s
+ep 3 step 180/288 loss 0.0033 lr 9.26e-04 1289 rows/s
+epoch 3: macro 0.0572 micro 0.3295 P 0.2232 R 0.6290 MCC 0.3722 tags/img 91.0
+new best macro 0.0572 -> best_head.pt
+ep 4 step 200/288 loss 0.0031 lr 6.40e-04 1275 rows/s
+ep 4 step 220/288 loss 0.0031 lr 3.94e-04 1283 rows/s
+ep 4 step 240/288 loss 0.0031 lr 2.01e-04 1289 rows/s
+epoch 4: macro 0.0592 micro 0.3337 P 0.2268 R 0.6311 MCC 0.3758 tags/img 89.9
+new best macro 0.0592 -> best_head.pt
+ep 5 step 260/288 loss 0.0031 lr 6.94e-05 1260 rows/s
+ep 5 step 280/288 loss 0.0031 lr 5.71e-06 1267 rows/s
+epoch 5: macro 0.0597 micro 0.3351 P 0.2281 R 0.6314 MCC 0.3770 tags/img 89.4
+new best macro 0.0597 -> best_head.pt
+done, best macro 0.0597

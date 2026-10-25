@@ -1,0 +1,13 @@
+50000 images, 1614666 true positives, 32.3 labels per image
+thr   macro    mcc     prec    rec     micro   predicted   per-image
+C:\Users\kerok\apps\wd-tagger-trainer\scratch\sophie\threshold_curve.py:55: RuntimeWarning: overflow encountered in scalar multiply
+  denom = np.sqrt(float((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN)))
+0.30  0.2864  838687.9843  0.2183  0.6073  0.3474    6566935    131.3
+0.35  0.3271  557245.7791  0.2686  0.5533  0.4262    4771166     95.4
+0.40  0.3569  460190.8288  0.3171  0.5045  0.4929    3643704     72.9
+0.45  0.3747  297452.5642  0.3636  0.4593  0.5457    2884627     57.7
+0.50  0.3824  250790.6862  0.4068  0.4188  0.5837    2343204     46.9
+C:\Users\kerok\apps\wd-tagger-trainer\scratch\sophie\threshold_curve.py:55: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(float((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN)))
+0.55  0.3791  0.0000  0.4421  0.3805  0.6080    1930885     38.6
+0.60  0.3676  224061.8178  0.4705  0.3446  0.6184    1607348     32.1

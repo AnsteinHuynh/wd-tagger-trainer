@@ -1,0 +1,16 @@
+temperature grid, fit half
+  T=0.25: 0.3740
+  T=0.30: 0.3731
+  T=0.35: 0.3721
+  T=0.40: 0.3712
+  T=0.45: 0.3698
+  T=0.50: 0.3683
+  T=0.60: 0.3656
+  T=0.80: 0.3590
+  T=1.00: 0.3512
+chosen T=0.25  fit 0.3740  eval base 0.3465  eval 0.3686  gain +0.0221
+
+per-tag bias, fitted on the fit half at the chosen T, shrunk toward zero
+  lam 0.5: eval macro 0.3505  (-0.0181 against the plain temperature)
+  lam 1.0: eval macro 0.3513  (-0.0173 against the plain temperature)
+  lam 2.0: eval macro 0.3513  (-0.0173 against the plain temperature)

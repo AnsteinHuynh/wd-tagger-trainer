@@ -1,0 +1,163 @@
+[log] printing every 1 step(s), overriding the config
+[accum] 20 micro-batches of 40 per step (effective batch 800): the same gradient as one larger batch for an elementwise-mean loss, at 40 images of VRAM
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\d8eb6994
+config sha8: d8eb6994
+checkpoint selection metric: macro_f1 (--select-metric macro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+[val] nested validation cache: 10,000 images from I:\.cache\wd-tagger-trainer-384\valid_nested
+
+Loading weights:   0%|          | 0/400 [00:00<?, ?it/s]
+Loading weights:  61%|██████    | 243/400 [00:00<00:00, 2398.31it/s]
+Loading weights: 100%|██████████| 400/400 [00:00<00:00, 2529.00it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-large-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...23}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+params: OFT 14.48M, head 12.79M, unfrozen 0.00M in 0 block(s), backbone 330.8M, 148 OFT modules
+[compile] model=default optimizer=compiled (default mode; --compile-mode max-autotune for a long run), ready in 1.4s
+loss asl: gamma_pos 0.0, gamma_neg 2.0, clip 0.05, detach_focal
+no checkpoint found, starting fresh
+[stream] one pass over 5,321,713 images in 6,653 steps, batch 40 x 20 accumulated, 12 decode threads
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\d8eb6994\debugpics
+step 1/6653 loss 0.0094 lr 2.50e-06/8.75e-07 10 img/s vram 20.1GB
+step 2/6653 loss 0.0096 lr 5.00e-06/1.75e-06 65 img/s vram 20.1GB
+step 3/6653 loss 0.0096 lr 7.50e-06/2.62e-06 62 img/s vram 20.1GB
+step 4/6653 loss 0.0091 lr 1.00e-05/3.50e-06 68 img/s vram 20.1GB
+step 5/6653 loss 0.0096 lr 1.25e-05/4.38e-06 68 img/s vram 20.1GB
+step 6/6653 loss 0.0093 lr 1.50e-05/5.25e-06 68 img/s vram 20.1GB
+step 7/6653 loss 0.0094 lr 1.75e-05/6.12e-06 68 img/s vram 20.1GB
+step 8/6653 loss 0.0093 lr 2.00e-05/7.00e-06 68 img/s vram 20.1GB
+step 9/6653 loss 0.0092 lr 2.25e-05/7.87e-06 68 img/s vram 20.1GB
+step 10/6653 loss 0.0093 lr 2.50e-05/8.75e-06 67 img/s vram 20.1GB
+step 11/6653 loss 0.0095 lr 2.75e-05/9.63e-06 68 img/s vram 20.1GB
+step 12/6653 loss 0.0094 lr 3.00e-05/1.05e-05 67 img/s vram 20.1GB
+step 13/6653 loss 0.0092 lr 3.25e-05/1.14e-05 65 img/s vram 20.1GB
+step 14/6653 loss 0.0094 lr 3.50e-05/1.22e-05 65 img/s vram 20.1GB
+step 15/6653 loss 0.0097 lr 3.75e-05/1.31e-05 63 img/s vram 20.1GB
+step 16/6653 loss 0.0096 lr 4.00e-05/1.40e-05 68 img/s vram 20.1GB
+step 17/6653 loss 0.0091 lr 4.25e-05/1.49e-05 68 img/s vram 20.1GB
+step 18/6653 loss 0.0096 lr 4.50e-05/1.57e-05 68 img/s vram 20.1GB
+step 19/6653 loss 0.0092 lr 4.75e-05/1.66e-05 68 img/s vram 20.1GB
+step 20/6653 loss 0.0091 lr 5.00e-05/1.75e-05 68 img/s vram 20.1GB
+step 21/6653 loss 0.0097 lr 5.25e-05/1.84e-05 68 img/s vram 20.1GB
+step 22/6653 loss 0.0095 lr 5.50e-05/1.93e-05 68 img/s vram 20.1GB
+step 23/6653 loss 0.0090 lr 5.75e-05/2.01e-05 67 img/s vram 20.1GB
+step 24/6653 loss 0.0093 lr 6.00e-05/2.10e-05 67 img/s vram 20.1GB
+step 25/6653 loss 0.0092 lr 6.25e-05/2.19e-05 65 img/s vram 20.1GB
+step 26/6653 loss 0.0088 lr 6.50e-05/2.28e-05 64 img/s vram 20.1GB
+step 27/6653 loss 0.0092 lr 6.75e-05/2.36e-05 62 img/s vram 20.1GB
+step 28/6653 loss 0.0088 lr 7.00e-05/2.45e-05 67 img/s vram 20.1GB
+step 29/6653 loss 0.0090 lr 7.25e-05/2.54e-05 66 img/s vram 20.1GB
+step 30/6653 loss 0.0092 lr 7.50e-05/2.63e-05 66 img/s vram 20.1GB
+[stream] pass 0: finished tar 1/213 (25,000 samples)
+step 31/6653 loss 0.0088 lr 7.75e-05/2.71e-05 66 img/s vram 20.1GB
+PAUSE file detected -> checkpointed C:\Users\kerok\apps\wd-tagger-trainer\runs\d8eb6994\ckpt_step000031.pt and exiting cleanly
+[log] printing every 1 step(s), overriding the config
+[accum] 20 micro-batches of 40 per step (effective batch 800): the same gradient as one larger batch for an elementwise-mean loss, at 40 images of VRAM
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\2066dc7e
+config sha8: 2066dc7e
+checkpoint selection metric: macro_f1 (--select-metric macro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+[val] nested validation cache: 10,000 images from I:\.cache\wd-tagger-trainer-384\valid_nested
+
+Loading weights:   0%|          | 0/400 [00:00<?, ?it/s]
+Loading weights:  66%|██████▋   | 265/400 [00:00<00:00, 2618.81it/s]
+Loading weights: 100%|██████████| 400/400 [00:00<00:00, 2653.25it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-large-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...23}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.bias          | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+params: OFT 14.48M, head 12.79M, unfrozen 0.00M in 0 block(s), backbone 330.8M, 148 OFT modules
+[compile] model=default optimizer=compiled (default mode; --compile-mode max-autotune for a long run), ready in 1.3s
+loss asl: gamma_pos 0.0, gamma_neg 2.0, clip 0.05, detach_focal
+resumed C:\Users\kerok\apps\wd-tagger-trainer\runs\2066dc7e\ckpt_step000063.pt: step 63, epoch 0, batch 0 (continuing the data stream, not replaying)
+[stream] one pass over 5,321,713 images in 6,653 steps, batch 40 x 20 accumulated, 12 decode threads, resuming by skipping 50,400 samples
+[stream] pass 0: skipping 50,400 samples -> starts at tar 3/213
+step 64/6653 loss 0.0070 lr 1.60e-04/5.60e-05 10 img/s vram 20.8GB
+step 65/6653 loss 0.0070 lr 1.62e-04/5.69e-05 62 img/s vram 20.8GB
+step 66/6653 loss 0.0070 lr 1.65e-04/5.77e-05 61 img/s vram 20.8GB
+step 67/6653 loss 0.0069 lr 1.68e-04/5.86e-05 69 img/s vram 20.8GB
+step 68/6653 loss 0.0070 lr 1.70e-04/5.95e-05 69 img/s vram 20.8GB
+step 69/6653 loss 0.0069 lr 1.73e-04/6.04e-05 69 img/s vram 20.8GB
+step 70/6653 loss 0.0069 lr 1.75e-04/6.12e-05 68 img/s vram 20.8GB
+step 71/6653 loss 0.0067 lr 1.78e-04/6.21e-05 69 img/s vram 20.8GB
+step 72/6653 loss 0.0068 lr 1.80e-04/6.30e-05 69 img/s vram 20.8GB
+step 73/6653 loss 0.0066 lr 1.82e-04/6.39e-05 68 img/s vram 20.8GB
+step 74/6653 loss 0.0066 lr 1.85e-04/6.48e-05 68 img/s vram 20.8GB
+step 75/6653 loss 0.0067 lr 1.88e-04/6.56e-05 68 img/s vram 20.8GB
+step 76/6653 loss 0.0065 lr 1.90e-04/6.65e-05 65 img/s vram 20.8GB
+step 77/6653 loss 0.0065 lr 1.92e-04/6.74e-05 64 img/s vram 20.8GB
+step 78/6653 loss 0.0066 lr 1.95e-04/6.83e-05 60 img/s vram 20.8GB
+step 79/6653 loss 0.0062 lr 1.98e-04/6.91e-05 67 img/s vram 20.8GB
+step 80/6653 loss 0.0064 lr 2.00e-04/7.00e-05 67 img/s vram 20.8GB
+step 81/6653 loss 0.0063 lr 2.03e-04/7.09e-05 67 img/s vram 20.8GB
+step 82/6653 loss 0.0063 lr 2.05e-04/7.17e-05 67 img/s vram 20.8GB
+step 83/6653 loss 0.0060 lr 2.08e-04/7.26e-05 67 img/s vram 20.8GB
+step 84/6653 loss 0.0063 lr 2.10e-04/7.35e-05 67 img/s vram 20.8GB
+step 85/6653 loss 0.0062 lr 2.13e-04/7.44e-05 67 img/s vram 20.8GB
+step 86/6653 loss 0.0061 lr 2.15e-04/7.52e-05 66 img/s vram 20.8GB
+step 87/6653 loss 0.0061 lr 2.18e-04/7.61e-05 67 img/s vram 20.8GB
+step 88/6653 loss 0.0059 lr 2.20e-04/7.70e-05 65 img/s vram 20.8GB
+step 89/6653 loss 0.0059 lr 2.22e-04/7.79e-05 62 img/s vram 20.8GB
+step 90/6653 loss 0.0059 lr 2.25e-04/7.88e-05 59 img/s vram 20.8GB
+step 91/6653 loss 0.0059 lr 2.28e-04/7.96e-05 67 img/s vram 20.8GB
+step 92/6653 loss 0.0059 lr 2.30e-04/8.05e-05 67 img/s vram 20.8GB
+[stream] pass 0: finished tar 3/213 (75,000 samples)
+step 93/6653 loss 0.0056 lr 2.32e-04/8.14e-05 67 img/s vram 20.8GB
+PAUSE file detected -> checkpointed C:\Users\kerok\apps\wd-tagger-trainer\runs\2066dc7e\ckpt_step000093.pt and exiting cleanly

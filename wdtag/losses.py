@@ -32,8 +32,16 @@ def bce_pos_weight(logits: torch.Tensor, y: torch.Tensor, pos_weight=None, **_):
 
 def asl(logits: torch.Tensor, y: torch.Tensor, gamma_pos: float = 0.0,
         gamma_neg: float = 4.0, clip: float = 0.05, detach_focal: bool = True,
-        eps: float = 1e-8, **_) -> torch.Tensor:
-    """Asymmetric loss.
+        eps: float = 1e-8, neg_relax_thr: float = 0.0, neg_relax_alpha: float = 0.0,
+        **_) -> torch.Tensor:
+    """Asymmetric loss, optionally relaxing the model's own confident negatives.
+
+    `neg_relax_thr` and `neg_relax_alpha` implement omission tolerance without any external
+    model: a negative whose predicted probability already exceeds the threshold is scaled by
+    (1 - alpha). Human annotators omit tags they should have added, so a cell the model is
+    confident about but the label marks absent is more often a missing tag than an error, and
+    this stops the loss from teaching the model to suppress it. The document of record is
+    ARM-RESULTS.md, section on the omission arms.
 
         p = sigmoid(x);  xs_neg = (1 - p + clip).clamp(max=1)   # clip in PROBABILITY space
         pt = p*y + xs_neg*(1-y);  gamma = gamma_pos*y + gamma_neg*(1-y)
@@ -46,7 +54,12 @@ def asl(logits: torch.Tensor, y: torch.Tensor, gamma_pos: float = 0.0,
     unbounded, so hard-negative loss grows and rare tags are suppressed harder -- an anti-ASL.
     Measured at gamma_neg=4, x=+3: reference 1.545 vs old 2.447.
     """
-    return asymmetric_focal(logits, y, gamma_pos, gamma_neg, clip, detach_focal, eps).mean()
+    term = asymmetric_focal(logits, y, gamma_pos, gamma_neg, clip, detach_focal, eps)
+    if neg_relax_thr > 0.0 and neg_relax_alpha > 0.0:
+        p = torch.sigmoid(logits)
+        relax = (1.0 - y) * (p > neg_relax_thr) > 0.5
+        term = torch.where(relax, term * (1.0 - neg_relax_alpha), term)
+    return term.mean()
 
 
 def asymmetric_focal(z: torch.Tensor, y: torch.Tensor, gamma_pos: float, gamma_neg: float,

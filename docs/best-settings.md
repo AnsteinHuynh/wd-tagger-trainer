@@ -105,6 +105,8 @@ Convention: ours at batch 256, the bar at 64. A 50k pass at batch 24 took 346 s 
 | `head_pool` | `cls_mean_max_std` | M — 3072 -> 38.34M head; other pools are arms h2/h3 |
 | `epochs` | must exceed `--max-steps/batch` | M — else the run stops at an epoch boundary and looks complete (cost us a whole arm) |
 | checkpoint | 639 MB each | M — with the cadence fixed, 5 per 5k-step arm |
+| `optimizer_normed_momentum` / `optimizer_snr_cond` | on, and only together with `optimizer_oft_only: true` | M — measured 2026-10-24 at base-384 in four configurations. On all three trainable groups it is a loss: 0.0085 macro at step 1000 at 5e-4 and 0.0067 at matched 2.61e-4, against plain 0.0559. On the adapters only it is a small win: 0.1545 macro and 0.4338 micro on the 50k at matched displacement, 0.1555 and 0.4358 when the adapters run 1.9x hot, against plain 0.1498 and 0.4369. The head is the poison, every arm that switched it on sat at 0.008 or below. The full matrix is in `ARM-RESULTS.md`, section Optimizer switches at the three trainable groups |
+| `optimizer_spectral_normalization` | off | M — measured 2026-10-24 three ways at base-384, step 1000: 0.0004 untagged, 0.0007 with the `_is_oft` tag, 0.0078 with the tag plus per-group compensating rates, against plain 0.0559. Tagged it still throttles the adapters 44x, the head 34x and the biases not at all, so no single learning rate can drive it |
 
 ## 5. `num_workers: 0` — grade H, do not over-claim
 
@@ -118,8 +120,15 @@ Per-class thresholds / calibration — per-tag-oracle macro ceiling is 0.3879 vs
 More passes on the long run — the bar hit 97% of final macro in epoch 1. (M)
 Gradient checkpointing for ViT-B — no VRAM win worth the throughput. (M)
 Neumann > 5 Cayley terms — slower, no accuracy gain. (M)
+The adv_optm gold-star bundle for SinkSGD_adv — orthogonalGradient iterative, orthogonalSinkhorn, normedMomentum, snrCond, spectralNormalization, geometricWd, cautiousWd, statePrecision fp32, first written in `speedy-sdxl-vae-trainer/scratch/night3/run_grid.py:65` and mirrored in `dreamsim-dinov3` as the FULL Sink-V stack. Three matched ties in speedy and the verdict in its own journal is "no gain, THIRD confirmation"; the only per-switch ablations anywhere are dreamsim's and both regressions, normed_momentum -3.92pp test CI [-5.31,-2.49] and orthogonal_sinkhorn -3.61pp CI [-5.01,-2.16]. Our own arm 45 on base-384 with normed_momentum alone read macro 0.0079 at step 1000 against arm 1's 0.0558, a sevenfold collapse, which is the same finding on a different architecture. Every switch in that bundle changes the effective step size, so enabling one does not refine the learning-rate calibration, it voids it. (M, three sources)
 bitsandbytes 4-bit — unusable on cu132 (ships only to `cuda130`). (M)
 Head capacity as the differentiator — ours is 38.34M vs the bar's 35.15M and we lose macro with the bigger head. (M)
+
+## 6b. The optimizer-switch matrix lives in ARM-RESULTS.md
+
+`ARM-RESULTS.md` section Optimizer switches at the three trainable groups is the canonical table: switch crossed with the three groups that actually train, read at step 1000 and at 50k, with the arm number on every row. It is the source of the two rows above and it is where a new switch should be added rather than re-derived.
+
+Two traps that table does not show. The first is the missing `_is_oft` tag: `adv_optm` asks PEFT users to label their parameters, `scale_update` branches on the attribute, and untagged it divides a (k, C(b,2)) factor by its own spectral norm, which is a 66x throttle instead of the tagged 44x. The tag now sits beside the parameter in `wdtag/oft.py`. It cannot be applied to the head, since a (12476, 768) tensor handed to the OFT path raises a shape mismatch. The second is that `normed_momentum` and `snr_cond` have no equivalent hook at all, consulting only `is_vector`, so scoping by parameter group is the only lever that exists for them.
 
 ## 7. Traps that cost real time
 
@@ -145,3 +154,17 @@ Head capacity as the differentiator — ours is 38.34M vs the bar's 35.15M and w
 No augmentation is applied in training and none in scoring, and that is deliberate rather than an omission. The label space is fact-like and dense: 12476 tags that include colour (greyscale, monochrome, sepia, the sixteen named backgrounds), orientation and composition (from_behind, from_side, looking_back, looking_to_the_side, on_back, arms_behind_back), text and marks (english_text, signature, copyright_name, logo, watermark), and character identity where a mirror is not the same character. A colour jitter breaks every colour tag, a crop breaks composition tags, and a mirror breaks orientation tags and mirrored text. The usual assumption that an augmentation is label preserving does not hold here, and a noisy label is worse than a small dataset.
 
 Horizontal flip averaging at inference looked like a free exception because it touches no labels, but the same fact kills it: the model's legitimate prediction for a mirrored image differs for exactly those tags, so averaging blurs the orientation and text tags rather than the bulk of the distribution, and those sit in the macro average this project is scored on. Recorded as not a win on the user's reasoning, 2026-10-23, before spending the 25 GPU minutes that would have measured it.
+
+
+
+## 6. How to choose between two arms
+
+Adopted 2026-10-25 after an arm comparison in which a lost calibration state nearly produced the wrong decision. The rule is cheap to apply and it exists so a number that is not an arm score cannot be mistaken for one.
+
+Primary endpoint: paired macro F1 at 0.40 on the 50k. Accept an arm only if its macro gain exceeds the 0.0093 interval and the lower bootstrap bound is above zero. Micro is not the objective; it is a guardrail with a floor of minus 0.0016. MCC must not fall, because it is the balanced check against both forms of gaming. Macro precision must not fall materially, and predicted tags per image at 0.40 must stay under about 1.25 times the dataset's 32.3, which is what stops an arm buying macro by predicting tags indiscriminately. No regression on the tail: the top thousand tags carry 80.9 percent of all positive cells, so micro can hide a tail collapse completely. Carry a threshold-free ranking number, mAP or AUPRC, so a gain cannot be a threshold artefact.
+
+Selection uses the fixed 0.40 protocol only. Best-threshold numbers and calibration-fitted numbers are diagnostics and never select an arm.
+
+Two hard rules earned the hard way. Any state that is not in the checkpoint does not exist: if a run applies a calibration bias or any other auxiliary tensor, that tensor goes into the checkpoint and comes back on resume, and the validator must be able to apply it. And no calibration fitted on validation images may ever decide an arm, because the validation set is what the project is scored on.
+
+To claim the bar is beaten, both lower bounds must exceed 0.5579 macro and 0.6886 micro, not the point estimates.

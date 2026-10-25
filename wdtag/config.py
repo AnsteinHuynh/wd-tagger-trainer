@@ -42,7 +42,7 @@ class TrainConfig:
     # fine-tune the last N blocks (OFT rotations at identity). 0 = backbone frozen.
     unfreeze_blocks: int = 0
     # Neumann terms; 0 = exact. Valid only while ||Q|| is small: >=15 or exact; 5 = old default.
-    cayley_terms: int = 5
+    cayley_terms: int = 0
     # lr for those blocks' base weights (~per-parameter movement/step); keep far below lr_oft
     # or pretrained features die.
     lr_unfreeze: float = 0.0
@@ -57,6 +57,18 @@ class TrainConfig:
     loss: str = "bce"
     # ASL gamma_neg. 2.0 measured better than 4.0 on 2026-10-22: same macro, +11.9% micro.
     loss_gamma: float = 2.0
+    # Omission tolerance. Human annotators leave out tags that belong on the image, so a
+    # negative the model already scores above `loss_neg_relax_thr` is more likely a missing
+    # tag than a mistake; its loss is scaled by (1 - loss_neg_relax_alpha). Zero thr = off.
+    loss_neg_relax_thr: float = 0.0
+    loss_neg_relax_alpha: float = 0.0
+    # Per-tag rate matching, the calibration fix. Every `bias_match_every` steps, nudge each tag's
+    # logit bias so its predicted positive rate over the batch approaches its label rate. Holds
+    # the model's predicted count near the true count of 32.3 per image instead of drifting to
+    # 72.9 at the fixed 0.40 threshold. Zero eta = off. docs/calibration-at-fixed-threshold.md.
+    bias_match_eta: float = 0.0
+    bias_match_every: int = 50
+    bias_match_clip: float = 6.0
     ntr_lambda: float = 2.0
     # CB beta, 0.9 per BALMS; at 0.999 the (1-beta)/(1-beta**n) floor swallows >n~6000.
     cb_beta: float = 0.9
@@ -69,12 +81,37 @@ class TrainConfig:
     momentum: float = 0.95
     sinkhorn_iterations: int = 5
     orthogonal_sinkhorn: bool = False
+    # adv_optm 2.5 features for SinkSGD_adv. normed_momentum is Normalization-then-Momentum
+    # (Sinkhorn the gradient before it enters the buffer); snr_cond adds the arcsine variance
+    # preconditioner the author's sink-v note derives, and requires normed_momentum.
+    optimizer_normed_momentum: bool = False
+    optimizer_snr_cond: bool = False
+    optimizer_nesterov: bool = False
+    # Bumped to fp32 on the user's instruction (the gold-star bundle's setting). 'auto'
+    # tracks the parameter dtype, i.e. bf16 here. Vendor values: auto|fp32|factored|bf16_sr|
+    # fp16|int8_sr.
+    optimizer_state_precision: str = "auto"
+    # adv_optm orthograd modes: "disabled", "flattened", "iterative". Matrix params only.
+    optimizer_orthogonal_gradient: str = "disabled"
+    optimizer_spectral_normalization: bool = False
+    # Both are inert while weight_decay is 0, so they only mean anything at wd > 0
+    optimizer_geometric_wd: bool = False
+    optimizer_cautious_wd: bool = False
+    # Scope the Sinkhorn-geometry switches to the adapter tensors only, leaving the classifier
+    # head and any unfrozen block on the plain update
+    optimizer_oft_only: bool = False
+    # Which groups the geometry switches (normed momentum, snr, spectral, orthograd) reach:
+    # any subset of ["oft", "block", "head"]. Empty means all of them.
+    optimizer_switch_groups: list = dataclasses.field(default_factory=list)
     warmup_steps: int = 50
     # "cosine" spends the learning rate across the whole schedule, so the horizon has to be
     # chosen up front. "const" holds the peak and anneals only over the final `decay_steps`,
     # which makes a run extendable by raising `stream_images`.
     lr_schedule: str = "cosine"
     decay_steps: int = 0
+    # Step the current cosine cycle began on. 0 = the cycle started at step 0. Set it when a
+    # run is extended by whole epochs so the rate keeps falling instead of rewinding.
+    lr_cosine_start: int = 0
     epochs: int = 8
     grad_clip: float = 1.0
     # Micro-batches per optimiser step. 2 with batch 24 spends 48 images per update at 24 images
@@ -147,6 +184,9 @@ class TrainConfig:
         if isinstance(d.get("_sha8"), str):
             cfg._sha8_pin = d["_sha8"]
         return cfg
+
+
+
 
 
 

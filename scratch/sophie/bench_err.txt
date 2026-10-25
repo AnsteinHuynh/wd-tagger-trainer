@@ -1,0 +1,105 @@
+[step] batch 48, cayley_terms 0, 22.5 of 24.0 GB free before load
+
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 208/208 [00:00<00:00, 3637.78it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-base-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+W1023 23:16:25.910000 435784 torch\_dynamo\convert_frame.py:2068] [0/8] torch._dynamo hit config.recompile_limit (8)
+W1023 23:16:25.910000 435784 torch\_dynamo\convert_frame.py:2068] [0/8]    function: '_step_parameter' (C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\adv_optm\optim\SinkSGD_adv.py:246)
+W1023 23:16:25.910000 435784 torch\_dynamo\convert_frame.py:2068] [0/8]    last reason: 0/7: tensor 'p' rank mismatch. expected 1, actual 2. Guard failed on a parameter, consider using torch._dynamo.config.force_parameter_static_shapes = False to allow dynamism on parameters.
+W1023 23:16:25.910000 435784 torch\_dynamo\convert_frame.py:2068] [0/8] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W1023 23:16:25.910000 435784 torch\_dynamo\convert_frame.py:2068] [0/8] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+Traceback (most recent call last):
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\convert_frame.py", line 2098, in _compile
+    raise_unimplemented_cache_limit_exceeded()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\convert_frame.py", line 2082, in raise_unimplemented_cache_limit_exceeded
+    unimplemented(
+    ~~~~~~~~~~~~~^
+        gb_type="Dynamo recompile limit exceeded",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        ],
+        ^^
+    )
+    ^
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\exc.py", line 819, in unimplemented
+    raise Unsupported(msg, gb_type, skip_frame, **options)
+torch._dynamo.exc.Unsupported: Dynamo recompile limit exceeded
+  Explanation: Dynamo attempted to recompile the code object too many times, exceeding the recompile_limit cache size limit (currently set to 8). Excessive recompilations can degrade performance due to the compilation overhead of each recompilation.
+  Hint: To monitor recompilations, enable TORCH_LOGS=recompiles. If recompilations are expected, consider increasing torch._dynamo.config.recompile_limit to an appropriate value.
+  Hint: See https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html for tips on dealing with recompilations.
+
+  Developer debug context: Limit type: recompile_limit
+
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb0039.html
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\kerok\apps\wd-tagger-trainer\scratch\sophie\bench_step.py", line 109, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\kerok\apps\wd-tagger-trainer\scratch\sophie\bench_step.py", line 88, in main
+    one()  # first touch, not timed
+    ~~~^^
+  File "C:\Users\kerok\apps\wd-tagger-trainer\scratch\sophie\bench_step.py", line 78, in one
+    opt.step()
+    ~~~~~~~~^^
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\optim\optimizer.py", line 567, in wrapper
+    out = func(*args, **kwargs)
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\utils\_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\adv_optm\optim\SinkSGD_adv.py", line 399, in step
+    self.step_parameter(p, group, i)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\utils\_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\adv_optm\optim\SinkSGD_adv.py", line 242, in step_parameter
+    step_param_fn(p, grad, state, group, step_size, random_int_tensor, random_int_state_tensor)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\eval_frame.py", line 1265, in compile_wrapper
+    result = fn(*args, **kwargs)
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\convert_frame.py", line 2721, in __call__
+    result = self._torchdynamo_orig_backend(
+        frame, cache_entry, self.hooks, frame_state, skip=1
+    )
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\convert_frame.py", line 783, in __call__
+    result = _compile(
+        frame.f_code,
+    ...<18 lines>...
+        convert_frame_box=self._box,
+    )
+  File "C:\Users\kerok\AppData\Roaming\Python\Python314\site-packages\torch\_dynamo\convert_frame.py", line 2105, in _compile
+    raise FailOnRecompileLimitHit(
+        "Hard failure due to fullgraph=True"
+    ) from e
+torch._dynamo.exc.FailOnRecompileLimitHit: Hard failure due to fullgraph=True

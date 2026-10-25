@@ -1,0 +1,5 @@
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 4697.32it/s]
+no checkpoint in the run directory: caching the raw backbone
+resuming at 900 of 900 rows
+resumed labels for 900 rows
+done, 900 rows, dim 1536

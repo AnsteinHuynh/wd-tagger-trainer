@@ -47,3 +47,23 @@ It is exact rather than approximate here because our ASL reduces with an element
 One trap, found by testing rather than by reading. The pinned ring the streamer hands batches from was sized for a consumer holding a single batch. With accumulation the consumer holds the whole group, the ring stops covering what is live, and the producer overwrites batches the trainer has not consumed yet. Two runs of the same config then agree for fifty steps and drift apart at a random step, on all trainable tensors at once, which reads like a numerical problem and is not. `TarStream(hold=...)` sizes the ring for it; the trainer passes `hold=grad_accum`.
 
 Verification after that fix, all under `--deterministic` with dropout off. Two independent runs of 3 by 4: bit-identical at steps 20, 40, 60, 80, 100 and at 300. Pause at step 151 and resume: bit-identical to the uninterrupted control at 300. Edge cases: a stream length that is not a whole number of accumulated steps finishes and logs the shortfall; `.PAUSE` before the first step exits with zero checkpoints written; a truncated newest checkpoint falls back to the previous one and continues.
+
+## Stopping at a chosen step, or at the next validation
+
+`.PAUSE` stops at the next step boundary. Two suffixed forms are for stopping at a place you will want to read rather than as soon as possible.
+
+`.PAUSE-6300` stops after step 6300 has finished and its checkpoint has been written, so the file exists at exactly the step you named. Write `.PAUSE-6300` while the run is at 6040 and it steps to 6300, saves, prints `[pause] step target 6300 reached`, and exits.
+
+`.PAUSE-VALID` stops after the next validation rather than before it, so the numbers for that step are computed and printed and `best_val.pt` is updated before the process ends. This is the form to use when you want a scored checkpoint rather than a quiet one.
+
+Both are re-read every step, so writing one into the run directory while training runs is enough; nothing needs restarting. Both delete themselves at the moment they fire, so a resume continues past the point instead of pausing again forever.
+
+Four rules that settle the awkward cases, and the startup line prints which of them applies.
+
+A numbered target behind the current step, like `.PAUSE-6000` written at 6040, pauses at the next step boundary rather than being ignored.
+
+A numbered target that lands on a validation step runs the validation first, then pauses, so both the checkpoint and its numbers exist.
+
+`.PAUSE-VALID` with `--val-every-steps 0` cannot wait for a validation that will never come, so it warns at startup and falls back to pausing at the next step boundary.
+
+If both a numbered target and `.PAUSE-VALID` are present, whichever fires first wins, every file that fired is removed, and the startup line says so.

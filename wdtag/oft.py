@@ -55,6 +55,11 @@ class OFTRotationModule(nn.Module):
         self.use_cayley_neumann = use_cayley_neumann
         self.num_cayley_neumann_terms = num_cayley_neumann_terms
         self.weight = nn.Parameter(torch.zeros(r, n_elements))
+        # adv_optm's scale_update branches on this attribute. With it, a (k, C(b,2)) OFT factor
+        # gets the OFT-aware spectral normalization written for that layout; without it the
+        # factor is treated as an ordinary matrix and divided by its own spectral norm, which
+        # measured a 66x throttle against the plain update and froze the adapters.
+        self.weight._is_oft = True
         rows, cols = torch.triu_indices(block_size, block_size, 1)
         self.register_buffer("rows", rows, persistent=False)
         self.register_buffer("cols", cols, persistent=False)

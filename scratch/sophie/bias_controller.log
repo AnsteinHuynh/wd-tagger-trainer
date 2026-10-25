@@ -1,0 +1,10 @@
+baseline, temperature 0.25, no bias: eval macro 0.3686
+  eta 0.5 epochs 1: eval macro 0.3720  bias median -0.02 spread 0.47
+  eta 0.5 epochs 2: eval macro 0.3729  bias median -0.05 spread 0.56
+  eta 0.5 epochs 4: eval macro 0.3744  bias median -0.09 spread 0.66
+  eta 1.0 epochs 1: eval macro 0.3729  bias median -0.05 spread 0.57
+  eta 1.0 epochs 2: eval macro 0.3743  bias median -0.09 spread 0.66
+  eta 1.0 epochs 4: eval macro 0.3758  bias median -0.16 spread 0.78
+  eta 2.0 epochs 1: eval macro 0.3741  bias median -0.09 spread 0.67
+  eta 2.0 epochs 2: eval macro 0.3758  bias median -0.16 spread 0.79
+  eta 2.0 epochs 4: eval macro 0.3781  bias median -0.28 spread 0.93

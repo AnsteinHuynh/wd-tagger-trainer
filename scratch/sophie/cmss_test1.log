@@ -1,0 +1,43 @@
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights:  20%|█▉        | 41/208 [00:00<00:00, 374.87it/s]Loading weights:  43%|████▎     | 89/208 [00:00<00:00, 419.80it/s]Loading weights:  66%|██████▌   | 137/208 [00:00<00:00, 438.19it/s]Loading weights:  89%|████████▉ | 185/208 [00:00<00:00, 443.73it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 453.14it/s]
+[transformers] [1mSiglipVisionModel LOAD REPORT[0m from: I:\Models\siglip2-base-patch16-512
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\kerok\apps\wd-tagger-trainer\wdtag\cache_features.py", line 216, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "C:\Users\kerok\apps\wd-tagger-trainer\wdtag\cache_features.py", line 75, in main
+    model.load_adapter_state_dict(ck["adapter"], strict=False)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\kerok\apps\wd-tagger-trainer\wdtag\model.py", line 310, in load_adapter_state_dict
+    raise RuntimeError(f"adapter state mismatch: missing={missing[:4]} unexpected={unexpected[:4]}")
+RuntimeError: adapter state mismatch: missing=['norm.weight', 'norm.bias', 'head.1.weight'] unexpected=[]

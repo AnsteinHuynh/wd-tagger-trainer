@@ -27,6 +27,12 @@ WS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PAUSE_NAMES = (".PAUSE", ".PAUSE.txt", ".PUASE", ".PUASE.txt", "PAUSE")
 
+# Step-targeted pauses: `.PAUSE-6300` stops after step 6300 has finished and checkpointed,
+# `.PAUSE-VALID` stops after the next validation. Both delete themselves when they fire, first
+# to fire wins, and a target already behind the current step pauses at the next boundary.
+PAUSE_STEP_RE = re.compile(r"^\.?P(?:AUSE|UASE)-(\d+)$")
+PAUSE_VALID_RE = re.compile(r"^\.?P(?:AUSE|UASE)-VALID$")
+
 # `micro` default: macro-F1 is dominated by rare tags (fa51da74: macro picked step 2496 where
 # micro was 0.3800; micro actually peaked 0.3938 at step 5304).
 SELECT_METRICS = {
@@ -60,6 +66,47 @@ def paused(run_dir: str) -> bool:
     return False
 
 
+def pause_schedule(run_dir: str) -> tuple[list[tuple[str, int]], list[str]]:
+    """The step-targeted pause files, re-read every step so one written mid-run is seen.
+
+    Returns the numbered targets as (path, step) sorted by step, and the paths of any
+    `.PAUSE-VALID` markers."""
+    steps: list[tuple[str, int]] = []
+    valids: list[str] = []
+    for d in (run_dir, WS_ROOT):
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for n in names:
+            m = PAUSE_STEP_RE.match(n)
+            if m:
+                steps.append((os.path.join(d, n), int(m.group(1))))
+            elif PAUSE_VALID_RE.match(n):
+                valids.append(os.path.join(d, n))
+    steps.sort(key=lambda t: t[1])
+    return steps, valids
+
+
+def announce_pause_schedule(run_dir: str, a, start_step: int) -> None:
+    """Say at startup what the pause files mean, including the ones that cannot fire usefully."""
+    steps, valids = pause_schedule(run_dir)
+    for path, n in steps:
+        where = ("already passed, so it pauses at the next step boundary" if n <= start_step
+                 else f"after step {n}")
+        print(f"[pause] {os.path.basename(path)} -> {where}", flush=True)
+    if valids:
+        if not a.val_every_steps:
+            print("[pause] .PAUSE-VALID seen but no validation is scheduled, so it falls back "
+                  "to pausing at the next step boundary", flush=True)
+        else:
+            print(f"[pause] .PAUSE-VALID -> after the next validation "
+                  f"(every {a.val_every_steps} steps)", flush=True)
+    if steps and valids:
+        print("[pause] both a step target and .PAUSE-VALID are present; first to fire wins",
+              flush=True)
+
+
 class ListSampler(Sampler):
     def __init__(self, idx: list[int]):
         self.idx = idx
@@ -77,8 +124,14 @@ def epoch_perm(n: int, seed: int, epoch: int) -> list[int]:
 
 
 def lr_at(step: int, total: int, base: float, warmup: int,
-          schedule: str = "cosine", decay_steps: int = 0) -> float:
+          schedule: str = "cosine", decay_steps: int = 0,
+          start_step: int = 0) -> float:
     """Cosine over the whole schedule by default.
+
+    `start_step` re-anchors the cosine so a run can be extended by whole epochs: phase is
+    measured from the anchor rather than from zero, so raising `total` lengthens the tail
+    instead of rewinding the curve and re-heating the rate. Set it to the step the current
+    cycle began on, and leave it 0 for a run that is not restarting.
 
     "const" holds the peak after warmup and only anneals over the final `decay_steps`, which is
     what makes a run extendable: raising `total` slides the decay window later instead of
@@ -86,7 +139,7 @@ def lr_at(step: int, total: int, base: float, warmup: int,
     "keep training while it keeps climbing", then stop with a decay tail short enough that its
     length does not depend on how long the run turned out to be.
     """
-    if warmup > 0 and step < warmup:
+    if warmup > 0 and step < warmup and start_step == 0:
         return base * (step + 1) / warmup
     if schedule == "const":
         tail = max(0, int(decay_steps))
@@ -97,7 +150,8 @@ def lr_at(step: int, total: int, base: float, warmup: int,
             return base
         progress = min(1.0, (step - start) / max(1, tail))
         return base * (0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * progress)))
-    progress = (step - warmup) / max(1, total - warmup)
+    lo = max(warmup, int(start_step))
+    progress = (step - lo) / max(1, total - lo)
     progress = min(1.0, max(0.0, progress))
     return base * (0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * progress)))
 
@@ -274,6 +328,7 @@ class StepHelper:
             with open(mfile, encoding="utf-8") as f:
                 self.debug_manifest = json.load(f)
         self.debug_done = len(self.debug_manifest)
+        announce_pause_schedule(run_dir, a, start_step)
 
     def _save(self, epoch: int, batch: int) -> str:
         p = os.path.join(self.run_dir, f"ckpt_step{self.global_step:06d}.pt")
@@ -336,10 +391,33 @@ class StepHelper:
             # Fall through to the final save + test eval, so a finished schedule ends evaluated.
             print(f"schedule complete at step {gs}/{self.stop_at}", flush=True)
             return "complete"
-        if self.a.val_every_steps and gs % self.a.val_every_steps == 0:
+        valued = bool(self.a.val_every_steps and gs % self.a.val_every_steps == 0)
+        if valued:
             self.val(gs, 0 if epoch is None else epoch)
             self.t_step = time.time()   # else the next window's img/s includes the val
             self.since_log = 0
+        # Step-targeted pauses fire after the step and its validation have completed, so a
+        # numbered pause on a validation step leaves both the checkpoint and its numbers.
+        steps, valids = pause_schedule(self.run_dir)
+        due_steps = [(p, n) for p, n in steps if gs >= n]
+        fire_valid = bool(valids) and (valued or not self.a.val_every_steps)
+        if due_steps or fire_valid:
+            p = self._save(*cursor)
+            for path, _ in due_steps:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            if fire_valid:
+                for path in valids:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+            why = (f"step target {min(n for _, n in due_steps)} reached" if due_steps
+                   else ".PAUSE-VALID fired after a validation")
+            print(f"[pause] {why} -> checkpointed {p} and exiting cleanly", flush=True)
+            return "stop"
         return "go"
 
 
@@ -423,8 +501,15 @@ def main() -> None:
                     help="with --stream: number of samples to train on (default: one full pass "
                          "over the split, 5,321,713 images)")
     ap.add_argument("--stream-workers", type=int, default=8,
-                    help="decode threads for --stream (8 measures ~250 img/s, the GPU takes "
-                         "~150 img/s)")
+                    help="decode threads for --stream (measured 105 img/s at 512 on the "
+                         "5800X3D with 8, 104 with 12: the pool saturates near 12)")
+    ap.add_argument("--log-every", type=int, default=0,
+                    help="print a step line every N steps (default: the config's log_every). 1 "
+                         "gives per-step loss, lr, img/s and vram; each line costs one host sync")
+    ap.add_argument("--stream-prefetch", type=int, default=4,
+                    help="batches the reader may run ahead of the consumer (default 4). One "
+                         "pinned slot is batch x 3 x H x W bytes, 176 MB at batch 224 / 512, so "
+                         "prefetch 12 with grad_accum 6 pins about 3.3 GB of RAM")
     ap.add_argument("--ckpt-every-steps", type=int, default=CHECKPOINT_EVERY,
                     help=f"checkpoint interval (default {CHECKPOINT_EVERY}). A full 5.3M pass is "
                          "~111k steps, where the default would write ~55 GB, so pass e.g. 5000.")
@@ -439,6 +524,14 @@ def main() -> None:
 
     cfg = load_config(a, ap)
     check_image_size(cfg, ap)
+    if getattr(a, "log_every", 0):
+        # Per-step logging costs one host sync per step (loss.item and the vram reading), about
+        # 30 ms on this box. The identity is pinned before the override, because the run dir is
+        # sha8 of the config and a display-only field must not fork it.
+        if not getattr(cfg, "_sha8_pin", None):
+            cfg._sha8_pin = cfg.sha8()
+        cfg.log_every = max(1, int(a.log_every))
+        print(f"[log] printing every {cfg.log_every} step(s), overriding the config", flush=True)
     # images per optimiser step = batch_size * accum. Kept as a local because total_steps, the
     # resume skip and the loop grouping all need it and it must not drift between them.
     accum = max(1, int(getattr(cfg, "grad_accum", 1) or 1))
@@ -526,6 +619,25 @@ def main() -> None:
     else:
         print(f"[compile] model=eager (compile_model=false) optimizer={_opt}", flush=True)
 
+    # Per-tag rate matching. The head bias starts at logit(prior) and the loss walks it away from
+    # that, which ends up with the model predicting 72.9 tags per image where the truth has 32.3;
+    # at the fixed 0.40 threshold that over-prediction is the whole precision deficit. This holds
+    # each tag's predicted rate against its label rate instead. Off unless bias_match_eta > 0.
+    # See docs/calibration-at-fixed-threshold.md.
+    cal_bias = torch.zeros(model.n_labels, device=device, dtype=torch.float32)
+    _bias_eta = float(getattr(cfg, "bias_match_eta", 0.0) or 0.0)
+    _bias_every = max(1, int(getattr(cfg, "bias_match_every", 50) or 50))
+    _bias_clip = float(getattr(cfg, "bias_match_clip", 6.0) or 6.0)
+    if _bias_eta > 0.0:
+        _inner_forward = forward
+
+        def forward(x, _f=_inner_forward):
+            z = _f(x)
+            return z + cal_bias.to(z.dtype)
+
+        print(f"[cal] per-tag rate matching on: eta {_bias_eta} every {_bias_every} steps, "
+              f"bias clipped to +/-{_bias_clip}", flush=True)
+
     oft_params, head_params, block_params = model.trainable_parameters()
     from adv_optm import SinkSGD_adv
 
@@ -555,6 +667,24 @@ def main() -> None:
         if block_params:
             groups.append({"params": block_params, "lr": cfg.lr_unfreeze})
         groups.append({"params": head_params, "lr": cfg.lr_head})
+        # Which parameter groups the geometry switches reach. Empty means all of them, and
+        # `optimizer_oft_only` remains the older spelling of ["oft"].
+        scope = set(cfg.optimizer_switch_groups or ())
+        if cfg.optimizer_oft_only:
+            scope = {"oft"}
+        if scope and scope != {"oft", "block", "head"}:
+            # A per-row Sinkhorn on a matrix whose rows are tags forces every tag's row to equal
+            # RMS and throws the frequency prior away; on a rotation it is the geometry itself.
+            plain = {"normed_momentum": False, "snr_cond": False, "nesterov": False,
+                     "spectral_normalization": False, "orthogonal_gradient": "disabled",
+                     "orthogonal_sinkhorn": False, "geometric_wd": False,
+                     "cautious_wd": False}
+            names = ["oft"] + (["block"] if block_params else []) + ["head"]
+            for name, g in zip(names, groups):
+                if name not in scope:
+                    g.update(plain)
+            print(f"[opt] switches scoped to {sorted(scope)}, plain for "
+                  f"{[n for n in names if n not in scope]}", flush=True)
 
     opt = SinkSGD_adv(
         groups,
@@ -562,9 +692,30 @@ def main() -> None:
         weight_decay=cfg.weight_decay,
         sinkhorn_iterations=cfg.sinkhorn_iterations,
         orthogonal_sinkhorn=cfg.orthogonal_sinkhorn,
+        normed_momentum=cfg.optimizer_normed_momentum,
+        snr_cond=cfg.optimizer_snr_cond,
+        nesterov=cfg.optimizer_nesterov,
+        orthogonal_gradient=cfg.optimizer_orthogonal_gradient,
+        state_precision=cfg.optimizer_state_precision,
+        spectral_normalization=cfg.optimizer_spectral_normalization,
+        geometric_wd=cfg.optimizer_geometric_wd,
+        cautious_wd=cfg.optimizer_cautious_wd,
         stochastic_rounding=True,
         compiled_optimizer=cfg.compiled_optimizer,
     )
+    if (cfg.optimizer_normed_momentum or cfg.optimizer_snr_cond or cfg.optimizer_nesterov
+            or cfg.optimizer_state_precision != "auto"
+            or cfg.optimizer_orthogonal_gradient != "disabled"):
+        print(f"[opt] SinkSGD_adv normed_momentum={cfg.optimizer_normed_momentum} "
+              f"snr_cond={cfg.optimizer_snr_cond} nesterov={cfg.optimizer_nesterov} "
+              f"state_precision={cfg.optimizer_state_precision} "
+              f"orthogonal_gradient={cfg.optimizer_orthogonal_gradient} "
+              f"orthogonal_sinkhorn={cfg.orthogonal_sinkhorn} "
+              f"spectral={cfg.optimizer_spectral_normalization} "
+              f"geometric_wd={cfg.optimizer_geometric_wd} "
+              f"cautious_wd={cfg.optimizer_cautious_wd} "
+              f"weight_decay={cfg.weight_decay}",
+              flush=True)
 
 
     from .losses import make_loss, class_balanced_weights
@@ -601,6 +752,13 @@ def main() -> None:
         _loss_kwargs["gamma_neg"] = float(cfg.loss_gamma)
     if loss_name == "asl_ntr":
         _loss_kwargs["ntr_lambda"] = float(cfg.ntr_lambda)
+    # Omission tolerance: scale down the loss on a negative the model already finds likely,
+    # because human annotators leave out tags they should have added. Off unless configured.
+    if getattr(cfg, "loss_neg_relax_thr", 0.0) > 0.0:
+        _loss_kwargs["neg_relax_thr"] = float(cfg.loss_neg_relax_thr)
+        _loss_kwargs["neg_relax_alpha"] = float(cfg.loss_neg_relax_alpha)
+        print(f"loss: confident negatives above {cfg.loss_neg_relax_thr} scaled by "
+              f"{1.0 - cfg.loss_neg_relax_alpha:.2f} (omission tolerance)", flush=True)
 
     use_stream = a.stream or bool(getattr(cfg, "stream", False))
     if use_stream:
@@ -757,12 +915,15 @@ def main() -> None:
         for gi, base in enumerate(bases):
             opt.param_groups[gi]["lr"] = lr_at(step, total_steps, base,
                                                cfg.warmup_steps, cfg.lr_schedule,
-                                               cfg.decay_steps)
+                                               cfg.decay_steps,
+                                               getattr(cfg, "lr_cosine_start", 0))
         acc = max(1, int(getattr(cfg, "grad_accum", 1) or 1))
         micro = x if isinstance(x, (list, tuple)) else [x]
         ys = y if isinstance(y, (list, tuple)) else [y]
         opt.zero_grad(set_to_none=True)
         total = None
+        p_sum = y_sum = None
+        n_seen = 0
         # Backward per micro-batch on loss/acc, then one optimiser step: for a loss that averages
         # over elements this is the same gradient as the full batch, because the mean of the
         # micro-batch means is the mean. The dropout draw and the cast differ from a true large
@@ -783,12 +944,29 @@ def main() -> None:
                 loss = F.binary_cross_entropy_with_logits(logits.float(), yi)
             (loss / acc).backward()
             total = loss.detach() if total is None else total + loss.detach()
+            if _bias_eta > 0.0:
+                with torch.no_grad():
+                    ps = torch.sigmoid(logits.float()).sum(0)
+                    ys = yi.float().sum(0)
+                    p_sum = ps if p_sum is None else p_sum + ps
+                    y_sum = ys if y_sum is None else y_sum + ys
+                    n_seen += int(yi.shape[0])
         if total is None:
             raise RuntimeError("no micro-batches reached the step function")
         if cfg.grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(
                 [p for g in opt.param_groups for p in g["params"]], cfg.grad_clip)
         opt.step()
+        if _bias_eta > 0.0 and n_seen > 0 and step % _bias_every == 0:
+            with torch.no_grad():
+                pred_rate = p_sum / n_seen
+                want_rate = y_sum / n_seen
+                cal_bias.add_((want_rate - pred_rate) * _bias_eta * 8.0)
+                cal_bias.clamp_(-_bias_clip, _bias_clip)
+                if step % 1000 == 0:
+                    print(f"[cal] predicted per image {float(p_sum.sum()) / n_seen:.1f} "
+                          f"against true {float(y_sum.sum()) / n_seen:.1f}, "
+                          f"bias median {float(cal_bias.median()):+.2f}", flush=True)
         return total / max(1, len(micro))
 
     h = StepHelper(model, opt, cfg, a, run_dir, ds_train, lambda: best, run_val,
@@ -822,7 +1000,7 @@ def main() -> None:
             for p in range(start_pass, want_passes):
                 sp = TarStream("train", seed=cfg.seed, pass_index=p,
                                batch_size=cfg.batch_size, n_labels=n_labels,
-                               workers=a.stream_workers, prefetch=4, hold=accum,
+                               workers=a.stream_workers, prefetch=a.stream_prefetch, hold=accum,
                                skip=next_skip if p == start_pass else 0,
                                max_samples=int(min(corpus, stream_images - p * corpus)),
                                log=lambda m: print(m, flush=True))
@@ -906,6 +1084,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

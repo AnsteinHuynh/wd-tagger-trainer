@@ -1,0 +1,96 @@
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 4366.42it/s]
+[transformers] [1mSiglipVisionModel LOAD REPORT[0m from: I:\Models\siglip2-base-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+checkpoint runs\a5ca91b3\ckpt_step001000.pt
+run runs\a5ca91b3  sizes [1000, 5000, 10000, 50000]  batch 256  thresholds 1 (0.40..0.40)
+scored 50,000 images in 112.3s (445 img/s)
+
+=== 1,000 images (4,669 supported labels) ===
+  at 0.40: macro F1 0.0483 MCC 0.0521 P 0.0412 R 0.0832 | micro F1 0.3614 MCC 0.4015 P 0.2499 R 0.6527
+
+=== 5,000 images (8,973 supported labels) ===
+  at 0.40: macro F1 0.0625 MCC 0.0690 P 0.0580 R 0.1086 | micro F1 0.3624 MCC 0.4031 P 0.2503 R 0.6565
+
+=== 10,000 images (10,809 supported labels) ===
+  at 0.40: macro F1 0.0664 MCC 0.0739 P 0.0660 R 0.1136 | micro F1 0.3629 MCC 0.4032 P 0.2510 R 0.6551
+
+=== 50,000 images (12,454 supported labels) ===
+  at 0.40: macro F1 0.0693 MCC 0.0782 P 0.0799 R 0.1143 | micro F1 0.3640 MCC 0.4034 P 0.2525 R 0.6518
+
+wrote runs\a5ca91b3\validation.json
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 4277.87it/s]
+[transformers] [1mSiglipVisionModel LOAD REPORT[0m from: I:\Models\siglip2-base-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+checkpoint runs\6f2f7364\ckpt_step001000.pt
+run runs\6f2f7364  sizes [1000, 5000, 10000, 50000]  batch 256  thresholds 1 (0.40..0.40)
+scored 50,000 images in 93.7s (533 img/s)
+
+=== 1,000 images (4,669 supported labels) ===
+  at 0.40: macro F1 0.0512 MCC 0.0546 P 0.0448 R 0.0826 | micro F1 0.3832 MCC 0.4157 P 0.2740 R 0.6374
+
+=== 5,000 images (8,973 supported labels) ===
+  at 0.40: macro F1 0.0662 MCC 0.0723 P 0.0625 R 0.1082 | micro F1 0.3842 MCC 0.4174 P 0.2740 R 0.6423
+
+=== 10,000 images (10,809 supported labels) ===
+  at 0.40: macro F1 0.0707 MCC 0.0778 P 0.0716 R 0.1135 | micro F1 0.3844 MCC 0.4172 P 0.2746 R 0.6402
+
+=== 50,000 images (12,454 supported labels) ===
+  at 0.40: macro F1 0.0741 MCC 0.0831 P 0.0884 R 0.1148 | micro F1 0.3859 MCC 0.4178 P 0.2767 R 0.6373
+
+wrote runs\6f2f7364\validation.json

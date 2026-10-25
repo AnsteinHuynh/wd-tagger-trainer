@@ -120,6 +120,7 @@ def main() -> int:
     # The bar reports one fixed point, Macro@0.40/Micro@0.40, the only comparison that
     # matters. lo:hi:step is diagnostic only; grid-search is not the protocol.
     ap.add_argument("--thr", default="0.40")
+    ap.add_argument("--cal-bias", default="", help="npy of per-tag logit biases to add")
     ap.add_argument("--probs-dir", default=PROBS_DIR)
     ap.add_argument("--recompute", action="store_true")
     ap.add_argument("--out", default="", help="defaults to <run>/validation.json")
@@ -202,6 +203,13 @@ def main() -> int:
         if a.bar:
             mean_t = torch.tensor(MEAN, device=device).view(1, 3, 1, 1)
             std_t = torch.tensor(STD, device=device).view(1, 3, 1, 1)
+        cal_bias = None
+        if a.cal_bias:
+            cal_bias = torch.tensor(np.load(a.cal_bias), dtype=torch.float32)
+            if cal_bias.numel() != n_labels:
+                raise SystemExit(f"--cal-bias has {cal_bias.numel()} values, expected {n_labels}")
+            print(f"calibration bias from {a.cal_bias}, median {float(cal_bias.median()):+.3f}",
+                  flush=True)
         with torch.no_grad():
             for start in range(0, sizes[-1], a.batch_size):
                 end = min(start + a.batch_size, sizes[-1])
@@ -212,6 +220,11 @@ def main() -> int:
                     logits = model(((xf - mean_t) / std_t).to(torch.bfloat16))
                 else:
                     logits = model(xb)
+                # A run trained with per-tag rate matching saves that bias beside the checkpoint;
+                # without it the checkpoint alone over-predicts wildly, because the model's weights
+                # drifted to compensate for a bias applied during training.
+                if cal_bias is not None:
+                    logits = logits.float() + cal_bias.to(device)[None, :]
                 probs = torch.sigmoid(logits.float())
                 pm[start:end] = probs.half().cpu().numpy()
                 accumulate(probs, batch_targets(start, end), start, end)
@@ -223,6 +236,13 @@ def main() -> int:
     else:
         print(f"reusing cached probabilities {pf} ({cached_rows:,} rows)", flush=True)
         pm = np.load(pf, mmap_mode="r")
+        cal_bias = None
+        if a.cal_bias:
+            cal_bias = torch.tensor(np.load(a.cal_bias), dtype=torch.float32)
+            if cal_bias.numel() != n_labels:
+                raise SystemExit(f"--cal-bias has {cal_bias.numel()} values, expected {n_labels}")
+            print(f"calibration bias from {a.cal_bias}, median {float(cal_bias.median()):+.3f}",
+                  flush=True)
         with torch.no_grad():
             for start in range(0, sizes[-1], a.batch_size):
                 end = min(start + a.batch_size, sizes[-1])
@@ -268,3 +288,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

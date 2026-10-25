@@ -163,6 +163,18 @@ For the full corpus that is 26 hours for two passes at 114 img/s, 13 hours for o
 
 The second tower costs 18% of throughput and 0.3 GB: 106 img/s against 130, exactly the 3.5 ms per image of its forward and nothing more, because it runs under `no_grad` with no adapter inside, so it retains no activations and adds no backward. A second tower that does carry an adapter would cost a backward through itself as well, roughly 7.7 ms per image, and would take the pair to about 65 img/s
 
+## J2. The production run, base-512 at effective 384 — measured 2026-10-24
+
+`63_u1-C-L-asl-g2.0-siglip2b512-5.3m-b64x6-E384-prod`, the full 5321713-image corpus, micro batch 64 with 6 accumulated micro-batches, exact Cayley, fp32 optimizer state, prefetch 10.
+
+| configuration | img/s | VRAM | source |
+|---|---:|---:|---|
+| b64 x 6, effective 384 | 99-103 | 20.9 GB | `runs/62902e8d`, 13859 steps, first 150 steps |
+| b128 x 3, effective 384 | 3 (stalled) | 23.5 GB | same config at double the micro batch, hit the cliff below and never recovered |
+
+The first attempt at this run used micro batch 128 and sat at 24057 MiB, which is the cliff rather than a working point: the log reached the debug-picture write of the first step and produced no step line in six minutes. Halving the micro batch to 64 and doubling accumulation to 6 dropped it to 20.9 GB and 99-103 img/s, which is 14.8 hours for one pass. The lesson is the same one section K records, and the margin that matters is 2 GB, not 2 percent: 20.9 GB is fine, 23.5 GB is a 3 img/s run that looks alive.
+
+
 ## K. Gradient checkpointing and the VRAM cliff — SigLIP2-L/16 at 384, batch 48, measured 2026-10-23
 
 The tower is `I:\Models\siglip2-large-patch16-384`, native 384 checkpoint, 24 blocks, 1024 wide, 576 patch tokens, OFT block 128 on 148 modules, cls pooling, ASL gamma 2.0, const schedule. Streamed off the corpus tars in every row, so these are trainer numbers and not cache numbers
@@ -190,6 +202,10 @@ The batch that images per update actually needs is cheaper than checkpointing: 2
 
 ## Traps that produced wrong numbers
 
+`scratch/sophie/bench_ckpt.py` starts its timer after the forward and after the loss, so its ms/backward is a backward only and a real trainer step is twice it, 2.03x at batch 24 and 2.08x at batch 40 measured 2026-10-23. Comparing a bench number to a trainer img/s is therefore a factor-of-two error, and every comparison in this file that did so before that date is suspect
+
+`compile-mode max-autotune` enables cudagraphs, and cudagraphs plus gradient accumulation die in the compiled backward with `accessing gradient tensor output of CUDAGraphs that has been overwritten by a subsequent run`; the tuner also spends ten minutes emitting `triton_mm Required: 131072 Hardware limit: 101376` first, so the failure costs about 25 minutes and produces no step. The mode that keeps autotuned kernels without cudagraphs is `max-autotune-no-cudagraphs`, which does run and gave 71 img/s against 68 default on large-384 at batch 40, with the device at 23.4 GB against 20.6 and the duty cycle falling to 73.6%, so it was reverted as unstable rather than slow
+
 1. Eager vs compiled is 1.25x on the reference config (92.8 -> 116.3 img/s). The old 1.7x came from a batch-32/block-32 `cls_mean` config we never train. Always state the config.
 2. Frozen vs unfrozen blocks changes speed and VRAM substantially; `unfreeze_blocks` belongs in every row.
 3. Batch size changes the ratio: small batches are dominated by the flat ~28 ms compiled-optimizer dispatch; large batches hit VRAM first.
@@ -200,3 +216,31 @@ The batch that images per update actually needs is cheaper than checkpointing: 2
 ## Gaps — not measured, do not quote a number
 
 Qwen tower fwd+bwd at any resolution on our pipeline; ViT-B/16 at 256px; ViT-L/16 with gradient checkpointing at a larger batch; our model with `compile(max-autotune)` at batch 48 versus the `default` mode used in the run; where the 22.1-to-23.5 GB cliff actually begins; batch 96 at 384 with all 24 blocks checkpointed, which should fit in about 7 GB and has not been run
+
+## Micro-batch is the throughput lever at 384, measured 2026-10-25
+
+Same model, same recipe, same effective batch of 384, only the micro-batch and the accumulation split differ. SigLIP2 B/16 at 384, adapters plus block scope, ASL gamma 2.0, exact Cayley.
+
+| micro x accum | VRAM | img/s | note |
+| --- | --- | --- | --- |
+| 48 x 8 | 9.1 GB | 121 to 152 | the 200000-image ablation arms, at effective 48 in practice |
+| 96 x 4 | 17.9 GB | 168 to 187 | arm 86, effective 384 |
+
+Raising the micro-batch from 48 to 96 while holding effective 384 buys roughly 25 to 40 percent more images per second for 8.8 GB of headroom, which is the cheapest speed on the board and the reason a 384 arm should not be run at micro 48 just because the old arms were. The card sat at 17.9 GB of 24.5, so 96 is not the ceiling; 128 was not attempted.
+
+One earlier measurement to distrust: the bar at batch 64 on 512 ran at 10 to 12 img/s while at batch 16 it ran at 46 img/s on the same card. Memory pressure near the ceiling costs far more than the smaller batch does, which is the same lesson as the 21.2 GB trainer at 512 running at 105 img/s while 23.5 GB collapsed to 17.
+
+## A "stall" that was my own arithmetic, struck 2026-10-25 07:45
+
+I claimed here that a tar boundary cost thirty-two minutes after a resume, on the evidence of a log that had not been written since 07:41 while I believed the time was 08:13. The run had in fact resumed at 07:36 from checkpoint 14301, so five minutes of normal stepping had produced exactly the steps I was looking at, and no stall existed. The lesson is not about disks, it is about me: compare a log timestamp against the machine clock and against the uptime of the process before writing a hazard into this file, because a fabricated timestamp story is worse than no story.
+
+
+## Feature caching throughput, measured 2026-10-25, forward only at 512
+
+SigLIP2-B through the production forward path runs the 10000-image in-run validation in 37 s, 270 img/s, so a full 5321713-image cache is about 5.5 h and 8.2 GB at 768 dimensions.
+
+DinoV3-B/16 caches at 131 img/s at batch 64, 1536 dimensions for cls plus mean, so the full corpus is 11.3 h and 16.4 GB.
+
+DinoV3-L/16 caches at 71 img/s at both batch 32 and batch 64, so batch size is not the lever and the full corpus is 22.0 h and 21.8 GB at 2048 dimensions. Measured twice, 63 img/s on the 25000-image pilot and 71 img/s on the 50000-image validation run.
+
+Head training on a 2048-dimension cache runs at 1270 rows per second at batch 512 with ASL and a 25.6-million-parameter linear head, which is 70 minutes per 5.3-million-row epoch. The head is memory-bound on the 12476-way projection, so a wider hidden layer will not be cheaper.

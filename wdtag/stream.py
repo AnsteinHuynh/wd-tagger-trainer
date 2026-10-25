@@ -230,7 +230,10 @@ class TarStream:
         bx = [torch.empty((self.batch_size, 3, SIZE, SIZE), dtype=torch.uint8,
                           pin_memory=True) for _ in range(ring)]
         bxn = [t.numpy() for t in bx]  # writable uint8 HWC-free views
-        by = [np.zeros((self.batch_size, n_labels), dtype=np.float32) for _ in range(ring)]
+        # Labels were pageable numpy, which makes the consumer's non_blocking H2D copy a
+        # synchronous one on the same stream as the forward. Pinned like the image slots.
+        by = [torch.zeros((self.batch_size, n_labels), dtype=torch.float32, pin_memory=True)
+              for _ in range(ring)]
         slot = 0
         fill = 0
         buf_src: list[tuple[str, str]] = []  # (sample key, tar) for the debug dump
@@ -253,7 +256,7 @@ class TarStream:
                         if fill == self.batch_size:
                             consumed = emitted + fill
                             x = bx[slot]
-                            y = torch.from_numpy(by[slot])  # shares memory with by[slot]
+                            y = by[slot]  # pinned, so the trainer's copy can overlap
                             src = buf_src
                             buf_src = []
                             fill = 0

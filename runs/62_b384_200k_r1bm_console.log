@@ -1,0 +1,121 @@
+[log] printing every 20 step(s), overriding the config
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\47378b50
+config sha8: 47378b50
+checkpoint selection metric: macro_f1 (--select-metric macro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+[val] nested validation cache: 10,000 images from I:\.cache\wd-tagger-trainer-384\valid_nested
+
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 208/208 [00:00<00:00, 3587.26it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-base-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+params: OFT 5.17M, head 9.60M, unfrozen 7.09M in 1 block(s), backbone 98.8M, 76 OFT modules
+[compile] model=default optimizer=compiled (default mode; --compile-mode max-autotune for a long run), ready in 1.4s
+[opt] oft_only: switches scoped to the 70 adapter tensors, head and block groups plain
+[opt] SinkSGD_adv normed_momentum=True snr_cond=True nesterov=False state_precision=fp32 orthogonal_gradient=disabled orthogonal_sinkhorn=False spectral=False geometric_wd=False cautious_wd=False weight_decay=0.0
+loss asl: gamma_pos 0.0, gamma_neg 2.0, clip 0.05, detach_focal
+no checkpoint found, starting fresh
+[stream] one pass over 200,000 images in 4,167 steps, batch 48, 12 decode threads
+debugpics: 48/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\47378b50\debugpics
+debugpics: 96/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\47378b50\debugpics
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\47378b50\debugpics
+step 20/4167 loss 0.0093 lr 1.04e-04/6.28e-06/2.50e-05 21 img/s vram 9.1GB
+step 40/4167 loss 0.0089 lr 2.09e-04/1.26e-05/5.01e-05 137 img/s vram 9.1GB
+step 60/4167 loss 0.0075 lr 2.61e-04/1.57e-05/6.26e-05 140 img/s vram 9.1GB
+step 80/4167 loss 0.0070 lr 2.61e-04/1.57e-05/6.26e-05 136 img/s vram 9.1GB
+step 100/4167 loss 0.0056 lr 2.61e-04/1.57e-05/6.26e-05 142 img/s vram 9.1GB
+step 120/4167 loss 0.0053 lr 2.61e-04/1.57e-05/6.26e-05 135 img/s vram 9.1GB
+step 140/4167 loss 0.0047 lr 2.61e-04/1.57e-05/6.25e-05 139 img/s vram 9.1GB
+step 160/4167 loss 0.0055 lr 2.61e-04/1.57e-05/6.25e-05 135 img/s vram 9.1GB
+step 180/4167 loss 0.0049 lr 2.60e-04/1.57e-05/6.25e-05 143 img/s vram 9.1GB
+step 200/4167 loss 0.0051 lr 2.60e-04/1.57e-05/6.24e-05 139 img/s vram 9.1GB
+step 220/4167 loss 0.0043 lr 2.60e-04/1.56e-05/6.24e-05 140 img/s vram 9.1GB
+step 240/4167 loss 0.0046 lr 2.60e-04/1.56e-05/6.23e-05 136 img/s vram 9.1GB
+step 260/4167 loss 0.0048 lr 2.59e-04/1.56e-05/6.22e-05 144 img/s vram 9.1GB
+step 280/4167 loss 0.0039 lr 2.59e-04/1.56e-05/6.21e-05 131 img/s vram 9.1GB
+step 300/4167 loss 0.0044 lr 2.59e-04/1.56e-05/6.21e-05 145 img/s vram 9.1GB
+step 320/4167 loss 0.0042 lr 2.58e-04/1.55e-05/6.20e-05 134 img/s vram 9.1GB
+step 340/4167 loss 0.0043 lr 2.58e-04/1.55e-05/6.19e-05 136 img/s vram 9.1GB
+step 360/4167 loss 0.0043 lr 2.58e-04/1.55e-05/6.18e-05 143 img/s vram 9.1GB
+step 380/4167 loss 0.0039 lr 2.57e-04/1.55e-05/6.17e-05 133 img/s vram 9.1GB
+step 400/4167 loss 0.0046 lr 2.57e-04/1.54e-05/6.16e-05 134 img/s vram 9.1GB
+step 420/4167 loss 0.0043 lr 2.56e-04/1.54e-05/6.14e-05 139 img/s vram 9.1GB
+step 440/4167 loss 0.0039 lr 2.56e-04/1.54e-05/6.13e-05 135 img/s vram 9.1GB
+step 460/4167 loss 0.0047 lr 2.55e-04/1.53e-05/6.12e-05 137 img/s vram 9.1GB
+step 480/4167 loss 0.0045 lr 2.54e-04/1.53e-05/6.10e-05 129 img/s vram 9.1GB
+step 500/4167 loss 0.0042 lr 2.54e-04/1.53e-05/6.09e-05 140 img/s vram 9.1GB
+[stream] pass 0: finished tar 1/213 (24,960 samples)
+step 520/4167 loss 0.0041 lr 2.53e-04/1.52e-05/6.07e-05 134 img/s vram 9.1GB
+step 540/4167 loss 0.0045 lr 2.52e-04/1.52e-05/6.06e-05 145 img/s vram 9.1GB
+step 560/4167 loss 0.0039 lr 2.52e-04/1.51e-05/6.04e-05 127 img/s vram 9.1GB
+step 580/4167 loss 0.0040 lr 2.51e-04/1.51e-05/6.02e-05 139 img/s vram 9.1GB
+step 600/4167 loss 0.0044 lr 2.50e-04/1.51e-05/6.00e-05 136 img/s vram 9.1GB
+step 620/4167 loss 0.0042 lr 2.49e-04/1.50e-05/5.98e-05 140 img/s vram 9.1GB
+step 640/4167 loss 0.0040 lr 2.49e-04/1.50e-05/5.96e-05 142 img/s vram 9.1GB
+step 660/4167 loss 0.0044 lr 2.48e-04/1.49e-05/5.94e-05 134 img/s vram 9.1GB
+step 680/4167 loss 0.0042 lr 2.47e-04/1.49e-05/5.92e-05 134 img/s vram 9.1GB
+step 700/4167 loss 0.0045 lr 2.46e-04/1.48e-05/5.90e-05 132 img/s vram 9.1GB
+step 720/4167 loss 0.0041 lr 2.45e-04/1.47e-05/5.88e-05 132 img/s vram 9.1GB
+step 740/4167 loss 0.0044 lr 2.44e-04/1.47e-05/5.86e-05 137 img/s vram 9.1GB
+step 760/4167 loss 0.0041 lr 2.43e-04/1.46e-05/5.84e-05 132 img/s vram 9.1GB
+step 780/4167 loss 0.0042 lr 2.42e-04/1.46e-05/5.81e-05 137 img/s vram 9.1GB
+step 800/4167 loss 0.0045 lr 2.41e-04/1.45e-05/5.79e-05 135 img/s vram 9.1GB
+step 820/4167 loss 0.0038 lr 2.40e-04/1.45e-05/5.76e-05 134 img/s vram 9.1GB
+step 840/4167 loss 0.0045 lr 2.39e-04/1.44e-05/5.74e-05 134 img/s vram 9.1GB
+step 860/4167 loss 0.0037 lr 2.38e-04/1.43e-05/5.71e-05 133 img/s vram 9.1GB
+step 880/4167 loss 0.0040 lr 2.37e-04/1.43e-05/5.68e-05 136 img/s vram 9.1GB
+step 900/4167 loss 0.0040 lr 2.36e-04/1.42e-05/5.66e-05 132 img/s vram 9.1GB
+step 920/4167 loss 0.0037 lr 2.35e-04/1.41e-05/5.63e-05 133 img/s vram 9.1GB
+step 940/4167 loss 0.0043 lr 2.34e-04/1.40e-05/5.60e-05 136 img/s vram 9.1GB
+step 960/4167 loss 0.0044 lr 2.32e-04/1.40e-05/5.57e-05 128 img/s vram 9.1GB
+step 980/4167 loss 0.0037 lr 2.31e-04/1.39e-05/5.54e-05 139 img/s vram 9.1GB
+step 1000/4167 loss 0.0042 lr 2.30e-04/1.38e-05/5.51e-05 131 img/s vram 9.1GB
+checkpoint C:\Users\kerok\apps\wd-tagger-trainer\runs\47378b50\ckpt_step001000.pt
+C:\Users\kerok\apps\wd-tagger-trainer\wdtag\train.py:139: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\torch\csrc\utils\tensor_numpy.cpp:214.)
+  img = torch.from_numpy(np.ascontiguousarray(self.images[i]))
+VAL step 1000 (ep 0): macro_f1 0.0427 macro_mcc 0.0453 micro_f1 0.4638 micro_mcc 0.4639 (supported_macro_f1 0.0492) | n=10000 best_thr 0.40 macro@bestthr 0.0492 macro@0.40 0.0492 | best by macro_f1 in 60.7s
+new best val macro_f1 0.0427 (selection metric: macro) -> best_val.pt
+step 1020/4167 loss 0.0041 lr 2.29e-04/1.38e-05/5.48e-05 146 img/s vram 9.1GB
+[stream] pass 0: finished tar 2/213 (49,968 samples)
+step 1040/4167 loss 0.0041 lr 2.27e-04/1.37e-05/5.45e-05 146 img/s vram 9.1GB
+step 1060/4167 loss 0.0046 lr 2.26e-04/1.36e-05/5.42e-05 134 img/s vram 9.1GB
+step 1080/4167 loss 0.0035 lr 2.25e-04/1.35e-05/5.39e-05 148 img/s vram 9.1GB
+step 1100/4167 loss 0.0038 lr 2.23e-04/1.34e-05/5.36e-05 128 img/s vram 9.1GB
+step 1120/4167 loss 0.0040 lr 2.22e-04/1.34e-05/5.32e-05 148 img/s vram 9.1GB
+step 1140/4167 loss 0.0038 lr 2.21e-04/1.33e-05/5.29e-05 132 img/s vram 9.1GB
+step 1160/4167 loss 0.0034 lr 2.19e-04/1.32e-05/5.26e-05 147 img/s vram 9.1GB
+step 1180/4167 loss 0.0043 lr 2.18e-04/1.31e-05/5.22e-05 128 img/s vram 9.1GB
+step 1200/4167 loss 0.0040 lr 2.16e-04/1.30e-05/5.19e-05 147 img/s vram 9.1GB
+step 1220/4167 loss 0.0034 lr 2.15e-04/1.29e-05/5.15e-05 124 img/s vram 9.1GB
+step 1240/4167 loss 0.0043 lr 2.13e-04/1.28e-05/5.12e-05 144 img/s vram 9.1GB
+step 1260/4167 loss 0.0038 lr 2.12e-04/1.27e-05/5.08e-05 128 img/s vram 9.1GB

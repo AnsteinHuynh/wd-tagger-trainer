@@ -1,0 +1,61 @@
+[log] printing every 20 step(s), overriding the config
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\f1835917
+config sha8: f1835917
+checkpoint selection metric: macro_f1 (--select-metric macro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+[val] nested validation cache: 10,000 images from I:\.cache\wd-tagger-trainer-384\valid_nested
+
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 208/208 [00:00<00:00, 3855.38it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-base-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...11}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...11}.mlp.fc1.weight            | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+params: OFT 5.17M, head 9.60M, unfrozen 7.09M in 1 block(s), backbone 98.8M, 76 OFT modules
+[compile] model=default optimizer=compiled (default mode; --compile-mode max-autotune for a long run), ready in 1.5s
+[opt] SinkSGD_adv normed_momentum=True snr_cond=True nesterov=False state_precision=fp32 orthogonal_gradient=disabled orthogonal_sinkhorn=False spectral=False geometric_wd=False cautious_wd=False weight_decay=0.0
+loss asl: gamma_pos 0.0, gamma_neg 2.0, clip 0.05, detach_focal
+no checkpoint found, starting fresh
+[stream] one pass over 200,000 images in 4,167 steps, batch 48, 12 decode threads
+debugpics: 48/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\f1835917\debugpics
+debugpics: 96/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\f1835917\debugpics
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\f1835917\debugpics
+step 20/4167 loss 0.0094 lr 2.00e-04/1.20e-05/4.80e-05 16 img/s vram 9.1GB
+step 40/4167 loss 0.0092 lr 4.00e-04/2.40e-05/9.60e-05 140 img/s vram 9.1GB
+step 60/4167 loss 0.0083 lr 5.00e-04/3.00e-05/1.20e-04 142 img/s vram 9.1GB
+step 80/4167 loss 0.0080 lr 5.00e-04/3.00e-05/1.20e-04 139 img/s vram 9.1GB
+step 100/4167 loss 0.0067 lr 5.00e-04/3.00e-05/1.20e-04 144 img/s vram 9.1GB
+step 120/4167 loss 0.0067 lr 5.00e-04/3.00e-05/1.20e-04 138 img/s vram 9.1GB
+step 140/4167 loss 0.0059 lr 4.99e-04/3.00e-05/1.20e-04 144 img/s vram 9.1GB
+step 160/4167 loss 0.0074 lr 4.99e-04/3.00e-05/1.20e-04 139 img/s vram 9.1GB
+step 180/4167 loss 0.0068 lr 4.99e-04/2.99e-05/1.20e-04 130 img/s vram 9.1GB
+step 200/4167 loss 0.0074 lr 4.98e-04/2.99e-05/1.20e-04 138 img/s vram 9.1GB
+step 220/4167 loss 0.0058 lr 4.98e-04/2.99e-05/1.20e-04 136 img/s vram 9.1GB

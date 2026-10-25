@@ -1,0 +1,57 @@
+run dir: C:\Users\kerok\apps\wd-tagger-trainer\runs\d73ddfab
+config sha8: d73ddfab
+checkpoint selection metric: macro_f1 (--select-metric macro)
+[cache:train] all 16 shards present, nothing to do
+[cache:valid] all 2 shards present, nothing to do
+[cache:test] all 2 shards present, nothing to do
+[val] nested validation cache: 10,000 images from I:\.cache\wd-tagger-trainer-384\valid_nested
+
+Loading weights:   0%|          | 0/400 [00:00<?, ?it/s]
+Loading weights:  41%|████▏     | 165/400 [00:00<00:00, 1648.22it/s]
+Loading weights:  82%|████████▎ | 330/400 [00:00<00:00, 1131.81it/s]
+Loading weights: 100%|██████████| 400/400 [00:00<00:00, 1151.08it/s]
+[transformers] SiglipVisionModel LOAD REPORT from: I:\Models\siglip2-large-patch16-384
+Key                                                          | Status     |  | 
+-------------------------------------------------------------+------------+--+-
+text_model.encoder.layers.{0...23}.layer_norm1.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.bias          | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.weight            | UNEXPECTED |  | 
+logit_bias                                                   | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.weight            | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc2.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | UNEXPECTED |  | 
+text_model.head.weight                                       | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm2.weight        | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.out_proj.weight | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | UNEXPECTED |  | 
+logit_scale                                                  | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.mlp.fc1.bias              | UNEXPECTED |  | 
+text_model.encoder.layers.{0...23}.layer_norm1.weight        | UNEXPECTED |  | 
+text_model.embeddings.token_embedding.weight                 | UNEXPECTED |  | 
+text_model.final_layer_norm.bias                             | UNEXPECTED |  | 
+text_model.embeddings.position_embedding.weight              | UNEXPECTED |  | 
+text_model.final_layer_norm.weight                           | UNEXPECTED |  | 
+text_model.head.bias                                         | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+[ckpt] gradient checkpointing on the last 24 of 24 block(s)
+params: OFT 14.48M, head 12.79M, unfrozen 0.00M in 0 block(s), backbone 330.8M, 148 OFT modules
+[compile] model=default optimizer=compiled (default mode; --compile-mode max-autotune for a long run), ready in 1.5s
+loss asl: gamma_pos 0.0, gamma_neg 2.0, clip 0.05, detach_focal
+no checkpoint found, starting fresh
+[stream] one pass over 600,000 images in 1,786 steps, batch 336, 8 decode threads
+debugpics: 100/100 written to C:\Users\kerok\apps\wd-tagger-trainer\runs\d73ddfab\debugpics
+step 20/1786 loss 0.0087 lr 8.33e-05/3.00e-05 26 img/s vram 21.8GB
+step 40/1786 loss 0.0077 lr 1.67e-04/6.00e-05 73 img/s vram 21.8GB
+step 60/1786 loss 0.0069 lr 2.50e-04/9.00e-05 73 img/s vram 21.8GB
+[stream] pass 0: finished tar 1/213 (24,864 samples)
+step 80/1786 loss 0.0057 lr 3.33e-04/1.20e-04 74 img/s vram 21.8GB
+step 100/1786 loss 0.0049 lr 4.17e-04/1.50e-04 74 img/s vram 21.8GB
+step 120/1786 loss 0.0045 lr 5.00e-04/1.80e-04 74 img/s vram 21.8GB
+PAUSE file detected -> checkpointed C:\Users\kerok\apps\wd-tagger-trainer\runs\d73ddfab\ckpt_step000136.pt and exiting cleanly

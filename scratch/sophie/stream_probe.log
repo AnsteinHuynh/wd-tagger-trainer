@@ -1,0 +1,9 @@
+[    4.1s] stream only, no model
+[    4.1s] open
+[    5.5s] batch 1 (64, 3, 512, 512) 48 img/s
+[    5.5s] batch 2 (64, 3, 512, 512) 96 img/s
+[    5.5s] batch 3 (64, 3, 512, 512) 142 img/s
+[    9.1s] batch 20 (64, 3, 512, 512) 255 img/s
+[   13.0s] batch 40 (64, 3, 512, 512) 289 img/s
+[   16.9s] batch 60 (64, 3, 512, 512) 302 img/s
+[   16.9s] done
