@@ -41,7 +41,7 @@ def asl(logits: torch.Tensor, y: torch.Tensor, gamma_pos: float = 0.0,
     (1 - alpha). Human annotators omit tags they should have added, so a cell the model is
     confident about but the label marks absent is more often a missing tag than an error, and
     this stops the loss from teaching the model to suppress it. The document of record is
-    ARM-RESULTS.md, section on the omission arms.
+    the private experiment log, section on the omission arms.
 
         p = sigmoid(x);  xs_neg = (1 - p + clip).clamp(max=1)   # clip in PROBABILITY space
         pt = p*y + xs_neg*(1-y);  gamma = gamma_pos*y + gamma_neg*(1-y)

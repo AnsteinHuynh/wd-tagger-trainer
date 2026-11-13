@@ -152,7 +152,13 @@ def main() -> int:
     else:
         model, ckpt_path, cfg = load_run_model(a.run, a.ckpt, n_labels, device)
         tag = os.path.basename(a.run).rstrip("\\/") + "_" + \
-            os.path.basename(ckpt_path).replace("ckpt_step", "").replace(".pt", "")
+              os.path.basename(ckpt_path).replace("ckpt_step", "").replace(".pt", "")
+    # an ensemble run trained against a feature cache must score against the same frozen
+    # view: pair each image row with its cached second-tower feature
+    vf = None
+    if getattr(cfg, "feat_cache", "") and getattr(cfg, "feat_val_cache", ""):
+        vf = np.load(cfg.feat_val_cache, mmap_mode="r")
+        print(f"[val] frozen view from {cfg.feat_val_cache}: {len(vf)} rows", flush=True)
     print(f"checkpoint {ckpt_path}\nrun {a.run}  sizes {sizes}  "
           f"batch {a.batch_size}  thresholds {T} ({thresholds[0]:.2f}..{thresholds[-1]:.2f})",
           flush=True)
@@ -218,6 +224,9 @@ def main() -> int:
                 if a.bar:
                     xf = xb.float().div_(255.0)
                     logits = model(((xf - mean_t) / std_t).to(torch.bfloat16))
+                elif vf is not None:
+                    fb = torch.from_numpy(np.ascontiguousarray(vf[start:end])).to(device)
+                    logits = model(xb, fb)
                 else:
                     logits = model(xb)
                 # A run trained with per-tag rate matching saves that bias beside the checkpoint;

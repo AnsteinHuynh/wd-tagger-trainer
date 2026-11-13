@@ -1,4 +1,0 @@
-ours 0.4 bar 0.4: ours 43.5/img, bar 9.2/img, overlap 7.4/img -> population 54.3/img (Chapman 54.3)
-ours 0.4 bar 0.5: ours 43.5/img, bar 7.3/img, overlap 6.0/img -> population 53.2/img (Chapman 53.2)
-ours 0.5 bar 0.5: ours 22.5/img, bar 7.3/img, overlap 5.2/img -> population 31.7/img (Chapman 31.7)
-ours 0.5 bar 0.9: ours 22.5/img, bar 1.5/img, overlap 1.2/img -> population 28.4/img (Chapman 28.4)

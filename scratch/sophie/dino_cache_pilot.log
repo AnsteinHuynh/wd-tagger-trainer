@@ -1,13 +1,0 @@
-Loading weights:   0%|          | 0/415 [00:00<?, ?it/s]Loading weights:   8%|▊         | 33/415 [00:00<00:01, 230.41it/s]Loading weights:  16%|█▌        | 67/415 [00:00<00:01, 252.10it/s]Loading weights:  24%|██▍       | 101/415 [00:00<00:01, 262.53it/s]Loading weights:  33%|███▎      | 135/415 [00:00<00:01, 267.14it/s]Loading weights:  41%|████      | 169/415 [00:00<00:00, 269.06it/s]Loading weights:  49%|████▉     | 203/415 [00:00<00:00, 270.93it/s]Loading weights:  57%|█████▋    | 237/415 [00:00<00:00, 271.02it/s]Loading weights:  65%|██████▌   | 271/415 [00:01<00:00, 270.52it/s]Loading weights:  73%|███████▎  | 305/415 [00:01<00:00, 270.52it/s]Loading weights:  82%|████████▏ | 339/415 [00:01<00:00, 271.77it/s]Loading weights:  90%|████████▉ | 373/415 [00:01<00:00, 273.13it/s]Loading weights:  98%|█████████▊| 407/415 [00:01<00:00, 286.34it/s]Loading weights: 100%|██████████| 415/415 [00:01<00:00, 277.52it/s]
-no checkpoint in the run directory: caching the raw backbone
-train cache: 25000 rows of dim 2048
-Traceback (most recent call last):
-  File "<frozen runpy>", line 203, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "C:\Users\kerok\apps\wd-tagger-trainer\wdtag\cache_features.py", line 199, in <module>
-    raise SystemExit(main())
-                     ~~~~^^
-  File "C:\Users\kerok\apps\wd-tagger-trainer\wdtag\cache_features.py", line 166, in main
-    idx_parts.append(nz[1].astype(np.int32))
-                     ^^^^^^^^^^^^
-AttributeError: 'Tensor' object has no attribute 'astype'. Did you mean: 'dtype'?

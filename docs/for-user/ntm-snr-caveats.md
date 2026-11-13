@@ -57,4 +57,4 @@ It is a model-deleting idea on a matrix whose rows are classes, tags, tasks or u
 
 Scope it with parameter groups, check the row-norm spread before and after, and do not trust a constant-gradient benchmark to tell you how far it will actually move.
 
-Source arms, all base-384, micro batch 48, 200000-image cosine: plain 49, pair everywhere 46 and 59, pair scoped hot 57, pair scoped matched 71, spectral 64, 64b and 70. The full switch-by-group matrix is in `ARM-RESULTS.md` under Optimizer switches at the three trainable groups, and the sister-project evidence the bundle came from is in `docs/optimizer-gold-settings.md`.
+Source arms, all base-384, micro batch 48, 200000-image cosine: plain 49, pair everywhere 46 and 59, pair scoped hot 57, pair scoped matched 71, spectral 64, 64b and 70. The full switch-by-group matrix is in the private experiment log under Optimizer switches at the three trainable groups, and the sister-project evidence the bundle came from is in `docs/optimizer-gold-settings.md`.

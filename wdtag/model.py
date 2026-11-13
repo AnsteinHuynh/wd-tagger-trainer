@@ -84,6 +84,51 @@ def unfreeze_last_blocks(backbone: nn.Module, n: int) -> int:
     return n
 
 
+def _parse_blocks(spec: str, n_layers: int) -> list[int]:
+    out = []
+    for part in str(spec or "").replace(" ", "").split(","):
+        if not part:
+            continue
+        i = int(part)
+        if not 0 <= i < n_layers:
+            raise ValueError(f"block {i} outside 0..{n_layers - 1}")
+        out.append(i)
+    return out
+
+
+def apply_block_grad_overrides(backbone: nn.Module, cfg) -> dict:
+    """Arms whose handle on a block is its rotation rather than its weights.
+
+    `unfreeze_last_blocks` gives an unfrozen block exactly one handle by freezing its OFT
+    rotation, because a free weight beside a free rotation is gauge-redundant: the rotation is
+    absorbed by the trained weight and the two just fight over the same product. Some arms want
+    the opposite split (weights frozen, rotation trained), or a rotation enabled in a block above
+    the unfreeze window, and a block count cannot express that. Applied after the count:
+      freeze_block_weights="11"   freeze these blocks' weights, biases and LayerNorms
+      train_oft_blocks="11"       re-enable these blocks' rotation parameters
+      train_oft_pooler=1          re-enable the pooler's rotation parameters (backbone.head)
+    Counts are returned so a mistyped spec shows up in the log/cfg before training starts.
+    """
+    layers = backbone_layers(backbone)
+    frozen_w = train_oft = 0
+    for i in _parse_blocks(getattr(cfg, "freeze_block_weights", ""), len(layers)):
+        for name, p in layers[i].named_parameters():
+            if not name.endswith("oft.weight"):
+                p.requires_grad_(False)
+                frozen_w += 1
+    for i in _parse_blocks(getattr(cfg, "train_oft_blocks", ""), len(layers)):
+        for name, p in layers[i].named_parameters():
+            if name.endswith("oft.weight"):
+                p.requires_grad_(True)
+                train_oft += 1
+    if getattr(cfg, "train_oft_pooler", False):
+        for name, p in backbone.head.named_parameters():
+            if name.endswith("oft.weight"):
+                p.requires_grad_(True)
+                train_oft += 1
+    return {"frozen_weight_tensors": frozen_w, "trainable_rotations": train_oft}
+
+
 def enable_block_checkpointing(backbone: nn.Module, n: int) -> int:
     """Recompute activations for the last `n` blocks.
 
@@ -139,6 +184,8 @@ class DinoTagger(nn.Module):
         if getattr(cfg, "unfreeze_blocks", 0) > 0:
             # after the OFT wrap: it freezes the rotations that wrap just created
             self.n_unfrozen = unfreeze_last_blocks(self.backbone, cfg.unfreeze_blocks)
+        # per-block overrides for arms that adapt a block by rotation rather than by weights
+        self.grad_overrides = apply_block_grad_overrides(self.backbone, cfg)
         self.backbone.gradient_checkpointing = False
         # DINOv3 prefixes its patch tokens with a cls token and four registers; SigLIP2 has
         # neither, and its 1024 tokens are all image patches.
@@ -168,10 +215,50 @@ class DinoTagger(nn.Module):
         if getattr(cfg, "siglip_dir", ""):
             from transformers import SiglipVisionModel
             self.siglip = SiglipVisionModel.from_pretrained(cfg.siglip_dir, dtype=dtype).eval()
+            ckpt_path = getattr(cfg, "siglip_ckpt", "")
+            if ckpt_path:
+                # Bake a trunk we trained into the frozen side. The OFT wrap must happen before
+                # the load, because the rotation tensors only exist once the modules are wrapped,
+                # and the wrapping is what makes the checkpoint's keys line up at all.
+                apply_oft_to_backbone(self.siglip, cfg)
+                blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+                state = blob.get("adapter") or blob.get("model") or blob
+                state = {k[len("backbone."):]: v for k, v in state.items()
+                         if k.startswith("backbone.")}
+                if not state:
+                    raise SystemExit(f"siglip_ckpt {ckpt_path}: no backbone.* tensors to load")
+                missing, unexpected = self.siglip.load_state_dict(state, strict=False)
+                bad = [k for k in missing if "rotations" not in k]
+                if bad:
+                    raise SystemExit(
+                        f"siglip_ckpt {ckpt_path}: {len(bad)} tensors missing from the frozen "
+                        f"tower's own state, first {bad[:3]}; the OFT settings of this config do "
+                        f"not match the checkpoint it was trained with")
+                print(f"[siglip] baked {len(state)} trained tensors into the frozen tower "
+                      f"({ckpt_path}), {len(missing)} keys left at init", flush=True)
             for p in self.siglip.parameters():
                 p.requires_grad_(False)
+            self.siglip.eval()
             self.sig_dim = self.siglip.config.hidden_size
             pool_dim += self.sig_dim
+        # Precomputed features for the frozen side: the training loop supplies them and the tower
+        # above is then only used when they are absent, which keeps validation identical to what
+        # the cache holds. The width must match, or the head would be built for the wrong input.
+        self.feat_cache = None
+        if getattr(cfg, "feat_cache", ""):
+            from .featcache import FeatCache
+            spec = getattr(cfg, "feat_cache_cols", "") or ""
+            lo, hi = (int(x) for x in spec.split(":")) if spec else (0, None)
+            self.feat_cache = FeatCache(cfg.feat_cache, (lo, hi) if hi else None)
+            if self.sig_dim and self.feat_cache.width != self.sig_dim:
+                raise SystemExit(
+                    f"feat_cache {cfg.feat_cache} cols {spec or 'all'} is "
+                    f"{self.feat_cache.width}-wide but the frozen tower is {self.sig_dim}; the "
+                    f"head would be built for the wrong input width")
+            if not self.sig_dim:
+                self.sig_dim = self.feat_cache.width
+                pool_dim += self.sig_dim
+            print(f"[feat_cache] {self.feat_cache.describe()}", flush=True)
         # Head fp32, rest bf16: many small updates need precision, bulk compute does not.
         # bf16 head update ~2 bf16 steps at peak LR but ~1/50 after cosine decay, where
         # only stochastic rounding prevents a stall. Head ~0.02% of FLOPs.
@@ -180,7 +267,7 @@ class DinoTagger(nn.Module):
         # normalised by its own pooler while SigLIP2's pooling output does not, so a shared norm
         # couples their scales and lets the wider side dominate the head's input statistics.
         self.norm = nn.LayerNorm(pool_dim - self.sig_dim)
-        self.norm2 = nn.LayerNorm(self.sig_dim) if self.siglip is not None else None
+        self.norm2 = nn.LayerNorm(self.sig_dim) if self.sig_dim else None
         layers: list[nn.Module] = [nn.Dropout(cfg.head_dropout)]
         if cfg.head_hidden > 0:
             layers += [nn.Linear(pool_dim, cfg.head_hidden), nn.GELU(),
@@ -239,11 +326,21 @@ class DinoTagger(nn.Module):
                 feats.append(patches.float().std(dim=1, unbiased=False).to(patches.dtype))
         return feats[0] if len(feats) == 1 else torch.cat(feats, dim=-1)
 
-    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+    def forward(self, pixel_values: torch.Tensor, frozen_feats: torch.Tensor | None = None
+                ) -> torch.Tensor:
         feats = self.forward_features(self._prep(pixel_values))
-        if self.siglip is not None:
-            with torch.no_grad():
-                f2 = self.siglip(pixel_values=self._siglip_prep(pixel_values)).pooler_output
+        if self.siglip is not None or self.sig_dim:
+            if frozen_feats is not None:
+                # Precomputed second view: same columns the tower would produce, already pooled
+                # by the same trunk, so no forward is paid for it. Only valid when the cache was
+                # built at this run's seed and pass index, which FeatCache does not check itself.
+                f2 = frozen_feats
+                if f2.dim() != 2 or f2.shape[1] != self.sig_dim:
+                    raise SystemExit(f"cached features are {tuple(f2.shape)} but this model's "
+                                     f"frozen side is {self.sig_dim}-wide")
+            else:
+                with torch.no_grad():
+                    f2 = self.siglip(pixel_values=self._siglip_prep(pixel_values)).pooler_output
             # normalise each tower on its own, then concatenate
             feats = torch.cat([self.norm(feats.to(self.head_dtype)),
                                self.norm2(f2.to(self.head_dtype))], dim=-1)

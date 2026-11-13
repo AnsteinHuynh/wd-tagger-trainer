@@ -10,7 +10,7 @@
   "head_pool": "cls",
   "head_hidden": 0,
   "head_dropout": 0.1,
-  "backbone_dir": "I:\\Models\\siglip2-base-patch16-512",
+  "backbone_dir": "models/siglip2-base-patch16-512",
   "head_fp32": true,
   "unfreeze_blocks": 0,
   "cayley_terms": 0,

@@ -1,3 +1,0 @@
-k = truth +0: macro 0.3193  micro 0.5310  precision 0.5310  recall 0.5310
-k = truth -4: macro 0.3109  micro 0.5328  precision 0.5704  recall 0.4998
-k = truth +4: macro 0.3244  micro 0.5235  precision 0.4946  recall 0.5559

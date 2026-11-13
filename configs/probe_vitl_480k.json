@@ -1,7 +1,7 @@
 {
   "_note": "ViT-L/16 frozen + OFTv2 + head. Budgeted by IMAGES (480,000) not steps, so it sees exactly the same amount of data as the ViT-B reference at batch 48 / 10,000 steps (runs/683cfec3/ckpt_step010000.pt). At batch 20 that is 24,000 steps. Comparing at 10,000 steps instead would give ViT-L only 200,000 images and make the capacity question unanswerable.",
   "mode": "squash",
-  "backbone_dir": "I:\\Models\\dinov3-vitl16-pretrain-lvd1689m",
+  "backbone_dir": "models/dinov3-vitl16-pretrain-lvd1689m",
   "batch_size": 20,
   "num_workers": 4,
   "block_size": 128,

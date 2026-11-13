@@ -65,7 +65,7 @@ Decomposition — `3.51 = 1.32 x 2.656`: head-vs-present-tail difficulty (0.6800
 
 ## 6. "Supported macro"
 
-Supported macro — macro over labels with `TP + FN > 0` (at least one test positive; `wdtag/metrics.py`). `n_supported_labels`: 4697 test, 4621 validation (a split property, not training data). Sibling: training-side minimum-examples cut; `REPORT.md` tabulates >=10 training images (2882)
+Supported macro — macro over labels with `TP + FN > 0` (at least one test positive; `wdtag/metrics.py`). `n_supported_labels`: 4697 test, 4621 validation (a split property, not training data). Sibling: training-side minimum-examples cut; the private log tabulates >=10 training images (2882)
 
 Why — excludes no-chance tags (absent from 1000 images, or never in 10000 training images) that plain macro counts as failures, conflating bad-at-tag with tag-not-in-sample
 
@@ -94,7 +94,7 @@ Calibration, not capability — +48.5% vs +3.6%: ours mis-calibrated (P >> R), b
 
 ## 8. The `@` notation: `Macro@0.40`, `Micro@0.40`, `Macro@Best`
 
-This repo (verified) — grep `README.md`, `REPORT.md`, `docs/`, `scratch/sophie//*.md` for `@0`, `@Best`, `Macro@`, `Micro@`: only `@0.5` (`micro F1 @0.5`, README line 12; `macro F1 @0.5`, REPORT lines 15-16, 147) and `tuned` (`threshold_tuned` in `eval_test.json`); `@0.40`, `@Best`, `Macro@`, `Micro@` appear nowhere
+This repo (verified) — grep `README.md`, `docs/` for `@0`, `@Best`, `Macro@`, `Micro@`: only `@0.5` (`micro F1 @0.5`, README line 12; `macro F1 @0.5`, REPORT lines 15-16, 147) and `tuned` (`threshold_tuned` in `eval_test.json`); `@0.40`, `@Best`, `Macro@`, `Micro@` appear nowhere
 
 Bar's card, verbatim (verified) —
 

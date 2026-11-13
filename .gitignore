@@ -1,15 +1,17 @@
-# Checkpoints and caches are large artifacts, not source.
-runs/**/*.pt
-runs/**/*.npy
-runs/**/*.npz
-runs/**/debugpics/
-runs/**/*.png
-# Keep provenance: runs/<sha8>/config.json, train_log.jsonl, eval_test.json
+# Runs and scratch are local working state (checkpoints, prob dumps, debug pics,
+# one-off probes). Small provenance JSONs are force-added selectively; everything
+# else under these trees stays out of the repo and off GitHub.
+runs/
+scratch/
+.inductor/
 
-# Scratch is working space: reference checkpoints and caches stay out of history
-scratch/**/*.pt
-scratch/**/*.npy
-scratch/**/*.pkl
+# Belt and braces: never let binaries or rendered samples in, anywhere.
+*.pt
+*.npy
+*.npz
+*.pkl
+debugpics/
+*.ckpt
 
 # Pause/stop flags are runtime state
 .PAUSE
@@ -22,9 +24,19 @@ PAUSE
 __pycache__/
 *.py[cod]
 .env/
+.venv/
 
 # Editor / OS
 .vscode/
 .idea/
 Thumbs.db
 desktop.ini
+
+# Internal assistant notes, not for public release
+AGENTS.md
+CURRENT-ASSISTANTS.md
+REWARDS.md
+poked-update.md
+
+# Moved-out legacy/deprecated material, kept on disk only
+.old/

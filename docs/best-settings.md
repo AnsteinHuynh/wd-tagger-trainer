@@ -20,7 +20,7 @@ Grades: M measured on this machine, I inferred from a measurement, H hypothesis 
   "ckpt_every_steps": 1000,        // M  now also the code default (section 1b)
   "ckpt_every_epochs": 0,          // M  epoch-end saves are opt-in (section 1b)
   "loss_gamma": 2.0,               // M  ASL gamma_neg: 2.0 beats 4.0 by 12% micro at equal macro (section 3b)
-  "backbone_dir": "I:\\Models\\siglip2-base-patch16-512", // M  SigLIP2 beats DINOv3 by 21% macro (section 0)
+  "backbone_dir": "models\\siglip2-base-patch16-512", // M  SigLIP2 beats DINOv3 by 21% macro (section 0)
   "num_workers": 0                 // H  worth <=6% at most (section 5)
 }
 ```
@@ -40,7 +40,7 @@ SigLIP2 wins on both metrics, runs 6% faster and uses 1 GB less, because it carr
 
 Consequence for the capacity question: the next size up is `siglip2-large-patch16-512`, 24 blocks and 1024 wide, not DINOv3-L. Same family, so the recipe stays constant and only the size changes.
 
-Untested on the new tower, and both are open arms: whether its MAP attention pooler discards the small-object detail tags need, tested by `head_pool: mean`; and whether freeze depth 1 is still optimal for features that are semantic rather than structural.
+Pooler against mean pooling is measured, and cls stands: arm17 (c8c22df5) ran the mean over 1024 patches at u1, ASL g2 on the same tower and scored 0.07306 macro and 0.43153 micro against the MAP pooler's 0.07547 and 0.43753, which is -3.2% macro at the edge of the seed band and -1.4% micro inside it (the private experiment log). The stated hypothesis that the pooler discards small-object detail is therefore not supported at the resolution this benchmark can see. Freeze depth 1 on semantic features is still open, and so is every pooling comparison below u12, which is why the private experiment log exists.
 
 ## 3b. `loss_gamma` 2.0, measured 2026-10-22
 
@@ -102,10 +102,10 @@ Convention: ours at batch 256, the bar at 64. A 50k pass at batch 24 took 346 s 
 | `momentum` / `weight_decay` | 0.95 / 0 | M — weight decay did not help multi-label |
 | `block_size` | 128 | M — auto-adjusted per matrix by `_adjust_block_size`, mirrors OneTrainer |
 | OFT params | `d*(b-1)/2` | I — from the formula; 73 OFT modules in ViT-B |
-| `head_pool` | `cls_mean_max_std` | M — 3072 -> 38.34M head; other pools are arms h2/h3 |
+| `head_pool` | `cls` | M — cls is the winner or the tie at every depth and loss where pooling was varied: +4.7% macro over the four-pool head at u12/BCE, +57.8% at u12/ASL g4, +3.2% over mean pooling on SigLIP2, and a four-decimal tie at production scale where the four-pool head does not raise the ceiling. The old `cls_mean_max_std` prescription was stale; the whole record is in `the private experiment log` |
 | `epochs` | must exceed `--max-steps/batch` | M — else the run stops at an epoch boundary and looks complete (cost us a whole arm) |
 | checkpoint | 639 MB each | M — with the cadence fixed, 5 per 5k-step arm |
-| `optimizer_normed_momentum` / `optimizer_snr_cond` | on, and only together with `optimizer_oft_only: true` | M — measured 2026-10-24 at base-384 in four configurations. On all three trainable groups it is a loss: 0.0085 macro at step 1000 at 5e-4 and 0.0067 at matched 2.61e-4, against plain 0.0559. On the adapters only it is a small win: 0.1545 macro and 0.4338 micro on the 50k at matched displacement, 0.1555 and 0.4358 when the adapters run 1.9x hot, against plain 0.1498 and 0.4369. The head is the poison, every arm that switched it on sat at 0.008 or below. The full matrix is in `ARM-RESULTS.md`, section Optimizer switches at the three trainable groups |
+| `optimizer_normed_momentum` / `optimizer_snr_cond` | on, and only together with `optimizer_oft_only: true` | M — measured 2026-10-24 at base-384 in four configurations. On all three trainable groups it is a loss: 0.0085 macro at step 1000 at 5e-4 and 0.0067 at matched 2.61e-4, against plain 0.0559. On the adapters only it is a small win: 0.1545 macro and 0.4338 micro on the 50k at matched displacement, 0.1555 and 0.4358 when the adapters run 1.9x hot, against plain 0.1498 and 0.4369. The head is the poison, every arm that switched it on sat at 0.008 or below. The full matrix is in the private experiment log, section Optimizer switches at the three trainable groups |
 | `optimizer_spectral_normalization` | off | M — measured 2026-10-24 three ways at base-384, step 1000: 0.0004 untagged, 0.0007 with the `_is_oft` tag, 0.0078 with the tag plus per-group compensating rates, against plain 0.0559. Tagged it still throttles the adapters 44x, the head 34x and the biases not at all, so no single learning rate can drive it |
 
 ## 5. `num_workers: 0` — grade H, do not over-claim
@@ -124,9 +124,9 @@ The adv_optm gold-star bundle for SinkSGD_adv — orthogonalGradient iterative, 
 bitsandbytes 4-bit — unusable on cu132 (ships only to `cuda130`). (M)
 Head capacity as the differentiator — ours is 38.34M vs the bar's 35.15M and we lose macro with the bigger head. (M)
 
-## 6b. The optimizer-switch matrix lives in ARM-RESULTS.md
+## 6b. The optimizer-switch matrix lives in the private experiment log
 
-`ARM-RESULTS.md` section Optimizer switches at the three trainable groups is the canonical table: switch crossed with the three groups that actually train, read at step 1000 and at 50k, with the arm number on every row. It is the source of the two rows above and it is where a new switch should be added rather than re-derived.
+the private experiment log section Optimizer switches at the three trainable groups is the canonical table: switch crossed with the three groups that actually train, read at step 1000 and at 50k, with the arm number on every row. It is the source of the two rows above and it is where a new switch should be added rather than re-derived.
 
 Two traps that table does not show. The first is the missing `_is_oft` tag: `adv_optm` asks PEFT users to label their parameters, `scale_update` branches on the attribute, and untagged it divides a (k, C(b,2)) factor by its own spectral norm, which is a 66x throttle instead of the tagged 44x. The tag now sits beside the parameter in `wdtag/oft.py`. It cannot be applied to the head, since a (12476, 768) tensor handed to the OFT path raises a shape mismatch. The second is that `normed_momentum` and `snr_cond` have no equivalent hook at all, consulting only `is_vector`, so scoping by parameter group is the only lever that exists for them.
 
@@ -168,3 +168,7 @@ Selection uses the fixed 0.40 protocol only. Best-threshold numbers and calibrat
 Two hard rules earned the hard way. Any state that is not in the checkpoint does not exist: if a run applies a calibration bias or any other auxiliary tensor, that tensor goes into the checkpoint and comes back on resume, and the validator must be able to apply it. And no calibration fitted on validation images may ever decide an arm, because the validation set is what the project is scored on.
 
 To claim the bar is beaten, both lower bounds must exceed 0.5579 macro and 0.6886 micro, not the point estimates.
+
+## Trap: a copied config carries its run identity
+
+A config under `runs/<sha8>/` contains `_sha8`, and that field is a pin: `TrainConfig` uses it as the run directory name so later edits cannot re-key an existing run. Copying such a config to make a new arm therefore points the new arm at the old run's directory. This happened on 2026-10-25: an ablation config copied from `runs/459e2a02/config.json` resolved to `runs/459e2a02` and overwrote four fields of the production config (`epochs`, `stream_images`, `seed`, `log_every`) before being killed at step 40. It wrote no checkpoint, and the config was restored from git, so the run itself was untouched. When building a new arm from an existing config, delete `_sha8` and confirm the printed `run dir:` line names an empty directory before letting it run.

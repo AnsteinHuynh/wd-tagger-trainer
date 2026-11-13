@@ -1,7 +1,0 @@
-total label cells 1614666 over 50000 images
-top     4 tags hold   7.0 percent of all positives
-top   100 tags hold  44.2 percent of all positives
-top  1000 tags hold  80.9 percent of all positives
-top  5000 tags hold  96.0 percent of all positives
-tags with under 10 positives: 4663 tags, 1.63 percent of positives
-tags with under 50 positives: 9756 tags, 8.32 percent of positives

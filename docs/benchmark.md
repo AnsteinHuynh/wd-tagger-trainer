@@ -10,7 +10,7 @@ VRAM = peak allocated during the measurement
 
 | knob | value |
 |---|---|
-| backbone | DINOv3 ViT-B/16, `I:\Models\dinov3-vitb16-pretrain-lvd1689m` |
+| backbone | DINOv3 ViT-B/16, `models\dinov3-vitb16-pretrain-lvd1689m` |
 | resolution / geometry | 512px, `mode=squash` |
 | trainable params | 123.5M (12 unfrozen blocks + 5.32M OFT + 38.33M head) |
 | `unfreeze_blocks` | 12 |
@@ -177,7 +177,7 @@ The first attempt at this run used micro batch 128 and sat at 24057 MiB, which i
 
 ## K. Gradient checkpointing and the VRAM cliff — SigLIP2-L/16 at 384, batch 48, measured 2026-10-23
 
-The tower is `I:\Models\siglip2-large-patch16-384`, native 384 checkpoint, 24 blocks, 1024 wide, 576 patch tokens, OFT block 128 on 148 modules, cls pooling, ASL gamma 2.0, const schedule. Streamed off the corpus tars in every row, so these are trainer numbers and not cache numbers
+The tower is `models\siglip2-large-patch16-384`, native 384 checkpoint, 24 blocks, 1024 wide, 576 patch tokens, OFT block 128 on 148 modules, cls pooling, ASL gamma 2.0, const schedule. Streamed off the corpus tars in every row, so these are trainer numbers and not cache numbers
 
 | configuration | img/s | Mpx/s | peak VRAM | source |
 |---|---:|---:|---:|---|
@@ -237,10 +237,24 @@ I claimed here that a tar boundary cost thirty-two minutes after a resume, on th
 
 ## Feature caching throughput, measured 2026-10-25, forward only at 512
 
-SigLIP2-B through the production forward path runs the 10000-image in-run validation in 37 s, 270 img/s, so a full 5321713-image cache is about 5.5 h and 8.2 GB at 768 dimensions.
+SigLIP2-B through the production forward path runs the 10000-image in-run validation in 37 s, 270 img/s, but that is off the validation memmap with no tar in the path. The same tower caching the train split runs 129 img/s, because the tar read and decode is the limit, so a full 5321713-image corpus cache is 11.5 h whatever the container holds. Struck 2026-10-25: the 5.5 h figure quoted earlier applied 270 img/s to a tar stream and was wrong by a factor of two. The consequence is that the cache pass is IO-bound, not model-bound, until the tower is slower than the stream, which only DinoV3-L at 71 img/s is.
 
 DinoV3-B/16 caches at 131 img/s at batch 64, 1536 dimensions for cls plus mean, so the full corpus is 11.3 h and 16.4 GB.
 
 DinoV3-L/16 caches at 71 img/s at both batch 32 and batch 64, so batch size is not the lever and the full corpus is 22.0 h and 21.8 GB at 2048 dimensions. Measured twice, 63 img/s on the 25000-image pilot and 71 img/s on the 50000-image validation run.
 
-Head training on a 2048-dimension cache runs at 1270 rows per second at batch 512 with ASL and a 25.6-million-parameter linear head, which is 70 minutes per 5.3-million-row epoch. The head is memory-bound on the 12476-way projection, so a wider hidden layer will not be cheaper.
+Head training on a 2048-dimension cache runs at 1270 rows per second at batch 512 with ASL and a 25.6-million-parameter linear head, which is 70 minutes per 5.3-million-row epoch. At 3072 dimensions the same head runs 931 rows per second at batch 1024, so throughput scales with width and the 12476-way projection is where the time goes. That means the cache container is not the limit and not worth tuning: 931 rows per second reads 5.7 MB per second of features, three orders of magnitude below the disk, so storing fp32 instead of fp16 would cost 32 GB of disk and no measurable time. Struck 2026-10-25: an earlier version of this line claimed the head was memory-bandwidth bound, which the byte count above disproves.
+
+
+
+## Cache batch size, measured 2026-10-25, SigLIP2 CMSS from checkpoint 16000
+
+Throughput through the tar stream is not monotone in batch below 256 and not improved above 384. Same 4000 images, same seed, one batch size at a time:
+
+| batch | img/s |
+| --- | --- |
+| 256 | 174 |
+| 384 | 223 |
+| 512 | 226 |
+
+512 uses 18.4 GB and runs at 61 degrees, so it is safe, but 384 buys the same throughput with 6 GB more headroom. The full 5321713-row pass at 226 img/s is 6.5 h rather than the 8.5 h that 174 implies.

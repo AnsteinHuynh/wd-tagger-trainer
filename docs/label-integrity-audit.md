@@ -164,8 +164,8 @@ Expectations confirmed — ~32.3 positives per image (median 30, not 33), one ra
 ## Commands
 
 ```powershell
-$env:PYTHONPATH="C:\Users\kerok\apps\wd-tagger-trainer"
-cd C:\Users\kerok\apps\wd-tagger-trainer
+$env:PYTHONPATH="<repo>"
+cd <repo>
 C:\Python314\python.exe scratch\sophie\audit_scan.py test valid train
 C:\Python314\python.exe scratch\sophie\audit_pixels.py
 C:\Python314\python.exe scratch\sophie\audit_report.py
@@ -176,4 +176,4 @@ C:\Python314\python.exe scratch\sophie\audit_pairs.py
 C:\Python314\python.exe scratch\sophie\audit_extra.py
 ```
 
-Nothing outside `scratch/sophie/` was written; `runs/`, `wdtag/`, `configs/`, the tar dataset and `I:\.cache` were read only. No GPU, no training
+Nothing outside `scratch/sophie/` was written; `runs/`, `wdtag/`, `configs/`, the tar dataset and `cache/wd-tagger-trainer` were read only. No GPU, no training

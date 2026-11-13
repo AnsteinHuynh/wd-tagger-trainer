@@ -41,4 +41,4 @@ Counter-argument for still trying: their task is pairwise similarity, a relative
 
 `docs/qwen-vision-tower.md` — the full mechanism, measurements, traps, and cost tables
 The probe scripts that produced the load/speed/resolution/parameter numbers (`qwen_tower_smoke.py`, `qwen_tower_res.py`, `param_breakdown.py`) were deleted in the 2026-10-22 automation cleanup; the numbers and the method that produced them are recorded in `docs/qwen-vision-tower.md`
-Sister project: `C:\Users\kerok\apps\dreamsim-dinov3`, `src/dreamsim_oft/qwen_vision.py` and `scratch/sophie/qwen38_frozen/FINDINGS.md`
+Sister project: `<sister-project>`, `src/dreamsim_oft/qwen_vision.py` and `scratch/sophie/qwen38_frozen/FINDINGS.md`

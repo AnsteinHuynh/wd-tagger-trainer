@@ -6,8 +6,12 @@ import hashlib
 import json
 from dataclasses import dataclass, asdict
 
-RUNS_ROOT = r"C:\Users\kerok\apps\wd-tagger-trainer\runs"
-DINO_DIR = r"I:\Models\dinov3-vitb16-pretrain-lvd1689m"
+import os
+
+RUNS_ROOT = os.environ.get(
+    "WDTAG_RUNS_ROOT", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runs")
+)
+DINO_DIR = os.environ.get("WDTAG_DINO_DIR", os.path.join("models", "dinov3-vitb16-pretrain-lvd1689m"))
 CHECKPOINT_EVERY = 1000
 
 
@@ -37,10 +41,32 @@ class TrainConfig:
     # alone. Frozen and adapter-free by design: it runs under no_grad, so it adds no backward
     # and no retained activations. Run identity.
     siglip_dir: str = ""
+    # Optional checkpoint whose `adapter` dict is baked into that second tower before it is
+    # frozen, so the frozen view is a trunk we trained rather than the raw pretrained one. The
+    # OFT settings of THIS config must match the ones the checkpoint was trained with, because
+    # the rotation shapes are built from block_size and block_share. Baked weights are frozen;
+    # nothing in the second tower trains either way. "" = load siglip_dir raw.
+    siglip_ckpt: str = ""
+    # Precomputed features for that frozen side, read instead of running the tower on every
+    # training batch. Shard directory holding `shards.json`; columns `lo:hi` of each row select
+    # which pools (cls is 0:768). The cache must have been built at this run's seed and pass
+    # index, and its width must equal the frozen side's. "" = compute the tower live.
+    feat_cache: str = ""
+    feat_cache_cols: str = ""
+    feat_val_cache: str = ""
     # Run identity: it changes the numerics of every head update.
     head_fp32: bool = False
     # fine-tune the last N blocks (OFT rotations at identity). 0 = backbone frozen.
     unfreeze_blocks: int = 0
+    # Per-block grad overrides, for arms where a block is adapted by rotation instead of weights.
+    # `unfreeze_blocks` freezes an unfrozen block's rotation because a free weight beside a free
+    # rotation is gauge-redundant; these say otherwise explicitly. Indices are 0-based, comma
+    # separated. `freeze_block_weights` pins a block's weights/LN/biases while keeping it inside
+    # the unfreeze window; `train_oft_blocks` re-enables that block's rotation; `train_oft_pooler`
+    # re-enables the pooler's rotations (backbone.head), which are frozen in production.
+    freeze_block_weights: str = ""
+    train_oft_blocks: str = ""
+    train_oft_pooler: bool = False
     # Neumann terms; 0 = exact. Valid only while ||Q|| is small: >=15 or exact; 5 = old default.
     cayley_terms: int = 0
     # lr for those blocks' base weights (~per-parameter movement/step); keep far below lr_oft

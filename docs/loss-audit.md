@@ -83,7 +83,7 @@ BALMS, verbatim: "q = σ(z−v) for positive instances and q = σ(λ(z−v)) for
 
 For a 0.1% tag, `logit(p) = −6.9`, so `v = −0.05 × (−6.9) = +0.345` and the loss sees `z − v`, i.e. the tag starts 0.35 logits below its BCE optimum. The fixed NTR bias pushes rare classes down, not up. Everything BALMS/DBL gain on the tail comes from λ, not from v.
 
-This matters twice over. First, `docs/heads-and-losses.md:130` says NTR has "a learned class-specific bias v_i that lowers the threshold for tail classes" — that was my error in the original report, it propagated into the implementation, and it is now the project's source of truth. It should say: fixed bias from the prior, κ=0.05, no threshold-lowering effect. I did not edit the doc because you are editing it; please apply.
+This matters twice over. First, the original heads-and-losses report (now private) says NTR has "a learned class-specific bias v_i that lowers the threshold for tail classes" — that was my error in the original report, it propagated into the implementation, and it is now the project's source of truth. It should say: fixed bias from the prior, κ=0.05, no threshold-lowering effect. I did not edit the doc because you are editing it; please apply.
 
 Second, the idea of a learned per-class bias is still the right idea for a fixed 0.40 protocol — it is just ours, not BALMS's, and BALMS's 18.40 cannot be cited as evidence for it.
 

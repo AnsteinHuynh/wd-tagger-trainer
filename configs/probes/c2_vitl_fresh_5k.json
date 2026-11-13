@@ -10,7 +10,7 @@
   "head_pool": "cls_mean_max_std",
   "head_hidden": 0,
   "head_dropout": 0.1,
-  "backbone_dir": "I:\\Models\\dinov3-vitl16-pretrain-lvd1689m",
+  "backbone_dir": "models/dinov3-vitl16-pretrain-lvd1689m",
   "head_fp32": true,
   "unfreeze_blocks": 24,
   "cayley_terms": 0,

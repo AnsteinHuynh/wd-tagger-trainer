@@ -29,7 +29,7 @@ import time
 import numpy as np
 import torch
 
-CACHE_ROOT = os.environ.get("WDTAG_CACHE", r"I:\.cache\wd-tagger-trainer")
+CACHE_ROOT = os.environ.get("WDTAG_CACHE_ROOT", os.path.join(".cache", "wd-tagger-trainer"))
 
 
 def parse() -> argparse.Namespace:
@@ -40,6 +40,10 @@ def parse() -> argparse.Namespace:
     ap.add_argument("--out", required=True, help="output directory")
     ap.add_argument("--limit", type=int, default=0, help="stop after this many images")
     ap.add_argument("--batch", type=int, default=64, help="forward batch, no gradients")
+    ap.add_argument("--compute-dtype", default="bf16", choices=("bf16", "fp32"),
+                    help="arithmetic precision of the pass; fp32 is slower and buys no measured accuracy")
+    ap.add_argument("--store-dtype", default="fp16", choices=("fp16", "fp32"),
+                    help="container on disk; fp16 is exact for bf16 output")
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--pass-index", type=int, default=0)
     ap.add_argument("--workers", type=int, default=12)
@@ -56,6 +60,30 @@ def newest_ckpt(run_dir: str) -> str:
     return os.path.basename(found[-1])
 
 
+def checkpoint_labels(path_dir: str, row: int, **arrays):
+    """Write labels to a new file named for its row and return that name.
+
+    Never renames over an existing file: a rename onto labels.npz raised WinError 5 once at row
+    418560 and killed a six-hour run, because Windows can hold the target open for a moment after a
+    large write. A fresh name cannot collide, so the checkpoint either appears whole or not at all,
+    and meta.json is the pointer that decides which one a resume trusts.
+    """
+    name = f"labels_{row:07d}.npz"
+    np.savez(os.path.join(path_dir, name), **arrays)
+    for old in sorted(glob.glob(os.path.join(path_dir, "labels_*.npz")))[:-2]:
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    return name
+
+
+def atomic_json(path: str, obj) -> None:
+    tmp = path + ".tmp"
+    json.dump(obj, open(tmp, "w"), indent=1)
+    os.replace(tmp, path)
+
+
 def main() -> int:
     a = parse()
     from .config import TrainConfig
@@ -69,7 +97,10 @@ def main() -> int:
         ckpt = a.ckpt or newest_ckpt(a.run)
     except SystemExit:
         ckpt = ""
-    model = DinoTagger(cfg, n_labels).to(device)
+    compute = torch.float32 if a.compute_dtype == "fp32" else torch.bfloat16
+    np_store = np.float32 if a.store_dtype == "fp32" else np.float16
+    torch_store = torch.float32 if a.store_dtype == "fp32" else torch.float16
+    model = DinoTagger(cfg, n_labels, dtype=compute).to(device)
     if ckpt:
         ck = torch.load(os.path.join(a.run, ckpt), map_location="cpu", weights_only=False)
         try:
@@ -108,7 +139,7 @@ def main() -> int:
             with torch.no_grad():
                 probe = torch.from_numpy(np.ascontiguousarray(images[:1])).to(device)
                 dim = int(model.forward_features(model._prep(probe)).shape[-1])
-            np.lib.format.open_memmap(feats_path, mode="w+", dtype=np.float16,
+            np.lib.format.open_memmap(feats_path, mode="w+", dtype=np_store,
                                       shape=(n_rows, dim))
             start = 0
             print(f"validation cache: {n_rows} rows of dim {dim}", flush=True)
@@ -120,7 +151,7 @@ def main() -> int:
                 e = min(s + a.batch, n_rows)
                 xb = torch.from_numpy(np.ascontiguousarray(images[s:e])).to(device)
                 f = model.forward_features(model._prep(xb))
-                fm[s:e] = f.float().half().cpu().numpy()
+                fm[s:e] = f.to(torch_store).float().cpu().numpy()
                 done = e
                 if done % 5000 < a.batch or done == n_rows:
                     rate = done / max(1e-9, time.time() - t0)
@@ -151,6 +182,10 @@ def main() -> int:
         written = int(old.get("written", 0))
         if written > 0:
             meta["dim"] = old.get("dim")
+            # The pointer to the labels file must come back too. Restoring the row count without it
+            # silently loaded an older labels file, 512 rows short, and the offsets then did not line
+            # up with the row counter.
+            meta["labels"] = old.get("labels")
             start = written
             print(f"resuming at {start} of {total} rows", flush=True)
 
@@ -159,7 +194,7 @@ def main() -> int:
         with torch.no_grad():
             probe = torch.zeros(1, 3, int(cfg.image_size), int(cfg.image_size), device=device)
             dim = int(model.forward_features(model._prep(probe)).shape[-1])
-        np.lib.format.open_memmap(feats_path, mode="w+", dtype=np.float16, shape=(total, dim))
+        np.lib.format.open_memmap(feats_path, mode="w+", dtype=np_store, shape=(total, dim))
         print(f"train cache: {total} rows of dim {dim}", flush=True)
     meta["dim"] = dim
     meta["written"] = start
@@ -177,7 +212,7 @@ def main() -> int:
             print(f"cache already holds {total} rows, keeping that size", flush=True)
         else:
             tmp = feats_path + ".grow"
-            grown = np.lib.format.open_memmap(tmp, mode="w+", dtype=np.float16,
+            grown = np.lib.format.open_memmap(tmp, mode="w+", dtype=np_store,
                                               shape=(total, dim))
             for s in range(0, fm.shape[0], 262144):
                 e = min(s + 262144, fm.shape[0])
@@ -188,20 +223,71 @@ def main() -> int:
             fm = np.lib.format.open_memmap(feats_path, mode="r+")
             print(f"grew the cache from {start} to {total} rows", flush=True)
     meta["n_images"] = int(total)
-    idx_parts, off_parts = [], []
-    if start > 0 and os.path.isfile(labels_path):
-        # Labels for the rows already written are in the last checkpoint of them, so a resumed
-        # cache does not end up with features for N images and labels for only the new ones.
-        z = np.load(labels_path)
-        idx_parts.append(z["indices"].astype(np.int32))
-        off_parts.append(np.diff(z["offsets"]).astype(np.int64))
-        print(f"resumed labels for {start} rows", flush=True)
+    # Labels are append-only raw arrays, one int32 per tag and one int64 cumulative offset per row.
+    # They were rewritten in full at every checkpoint, which at 1.5 million rows meant a 198 MB file
+    # every four seconds and a cost that grew with the cache; that is why throughput fell from 195 to
+    # 147 images per second as the run went on. Appending makes the total label I/O equal to the
+    # labels themselves.
+    idx_path = os.path.join(os.path.dirname(feats_path), "labels_indices.i32")
+    off_path = os.path.join(os.path.dirname(feats_path), "labels_offsets.i64")
 
-    def offsets_of(parts, n):
-        counts = np.concatenate(parts) if parts else np.zeros(0, dtype=np.int64)
-        out = np.zeros(n + 1, dtype=np.int64)
-        np.cumsum(counts[:n], out=out[1:])
-        return out
+    have_idx = 0
+    if start > 0 and os.path.isfile(off_path) and os.path.isfile(idx_path):
+        offs = np.fromfile(off_path, dtype=np.int64)
+        if offs.size < start:
+            raise SystemExit(f"{off_path} holds {offs.size} offsets but the cache claims {start}")
+        offs = offs[:start]
+        have_idx = int(offs[-1]) if start else 0
+        # Truncate whatever a crash left half-appended, so the files match the counter exactly.
+        with open(idx_path, "r+b") as fh:
+            fh.truncate(have_idx * 4)
+        with open(off_path, "r+b") as fh:
+            fh.truncate(start * 8)
+        print(f"resumed {start} label rows, {have_idx} tag indices", flush=True)
+    elif start > 0:
+        # Migrate a cumulative npz written before labels became append-only.
+        ptr = meta.get("labels") or f"labels_{start:07d}.npz"
+        src = os.path.join(os.path.dirname(feats_path), ptr)
+        if not os.path.isfile(src):
+            raise SystemExit(f"no labels for {start} rows: neither {off_path} nor {src}")
+        z = np.load(src)
+        if len(z["offsets"]) - 1 != start:
+            raise SystemExit(f"{src} covers {len(z['offsets']) - 1} rows but the cache claims {start}")
+        counts = np.diff(z["offsets"]).astype(np.int64)
+        offs = np.cumsum(counts)
+        z["indices"].astype(np.int32).tofile(idx_path)
+        offs.tofile(off_path)
+        z.close()  # np.load is lazy and holds the zip open until this is called
+        have_idx = int(offs[-1]) if start else 0
+        print(f"migrated {start} label rows from {os.path.basename(src)}", flush=True)
+    else:
+        open(idx_path, "wb").close()
+        open(off_path, "wb").close()
+
+    fi = open(idx_path, "ab")
+    fo = open(off_path, "ab")
+    pending_idx: list[np.ndarray] = []
+    pending_counts: list[np.ndarray] = []
+    n_pending = 0
+
+    def flush_labels(row_now: int) -> None:
+        """Append what is buffered, then advance the counter. Called with the row it reaches."""
+        nonlocal have_idx, n_pending
+        if pending_counts:
+            counts = np.concatenate(pending_counts).astype(np.int64)
+            idx = (np.concatenate(pending_idx).astype(np.int32) if pending_idx
+                   else np.zeros(0, dtype=np.int32))
+            cum = (np.cumsum(counts) + have_idx).astype(np.int64)
+            idx.tofile(fi)
+            cum.tofile(fo)
+            fi.flush()
+            fo.flush()
+            have_idx = int(cum[-1]) if cum.size else have_idx
+            pending_idx.clear()
+            pending_counts.clear()
+            n_pending = 0
+        meta["labels_format"] = "raw"
+        meta["written"] = int(row_now)
 
     row = start
     t0 = time.time()
@@ -216,41 +302,51 @@ def main() -> int:
                 break
             xb = torch.from_numpy(np.ascontiguousarray(images[:take])).to(device)
             f = model.forward_features(model._prep(xb))
-            fm[row:row + take] = f.float().half().cpu().numpy()
+            fm[row:row + take] = f.to(torch_store).float().cpu().numpy()
             y = labels[:take]
             y = y.detach().cpu().numpy() if torch.is_tensor(y) else np.asarray(y)
             nz = np.nonzero(y > 0.5)
-            idx_parts.append(nz[1].astype(np.int32))
-            counts = np.bincount(nz[0], minlength=take)
-            off_parts.append(counts.astype(np.int64))
+            pending_idx.append(nz[1].astype(np.int32))
+            pending_counts.append(np.bincount(nz[0], minlength=take).astype(np.int64))
+            n_pending += take
             row += take
             if row % a.log_every < a.batch:
                 rate = (row - start) / max(1e-9, time.time() - t0)
                 print(f"{row}/{total} rows, {rate:.0f} img/s", flush=True)
-                # Checkpoint the labels and the row count together, or a resume cannot reconstruct
-                # which images the features already written belong to.
-                np.savez(labels_path,
-                         indices=(np.concatenate(idx_parts) if idx_parts
-                                  else np.zeros(0, dtype=np.int32)),
-                         offsets=offsets_of(off_parts, row))
-                meta["written"] = int(row)
-                json.dump(meta, open(meta_path, "w"), indent=1)
+                # The features are flushed before the counter moves, so a resume never trusts a row
+                # whose page never reached disk.
+                fm.flush()
+                flush_labels(int(row))
+                try:
+                    atomic_json(meta_path, meta)
+                except OSError as e:
+                    print(f"[ckpt] meta not advanced ({e}); the previous row stands", flush=True)
             if row >= total:
                 break
     fm.flush()
-
-    indices = (np.concatenate(idx_parts) if idx_parts else np.zeros(0, dtype=np.int32))
-    offsets = offsets_of(off_parts, row)
-    np.savez(labels_path, indices=indices, offsets=offsets)
-    meta["written"] = int(row)
+    flush_labels(int(row))
     meta["n_images"] = int(row)
-    json.dump(meta, open(meta_path, "w"), indent=1)
+    meta["labels_indices"] = have_idx
+    atomic_json(meta_path, meta)
+    fi.close()
+    fo.close()
     print(f"done, {row} rows, dim {dim}", flush=True)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,8 +1,0 @@
-Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 4774.41it/s]
-no checkpoint in the run directory: caching the raw backbone
-train cache: 400 rows of dim 1536
-128/400 rows, 49 img/s
-256/400 rows, 81 img/s
-320/400 rows, 93 img/s
-400/400 rows, 105 img/s
-done, 400 rows, dim 1536

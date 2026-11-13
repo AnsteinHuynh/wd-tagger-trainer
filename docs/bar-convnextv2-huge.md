@@ -34,7 +34,7 @@ Per-category thresholds: general 0.38, character 0.51, rating 0.24. Per-tag tune
 | Micro F1 | 0.6886 |
 | Micro MCC / P / R | 0.6880 / 0.7033 / 0.6746 |
 
-Within 2% of its published 0.580 / 0.697, so our 50k subset is representative. Its probabilities are cached (`I:\.cache\wd-tagger-trainer\probs\bar_convnextv2_huge.npy`),
+Within 2% of its published 0.580 / 0.697, so our 50k subset is representative. Its probabilities are cached (`cache/wd-tagger-trainer\probs\bar_convnextv2_huge.npy`),
 so re-scoring, or ensembling it with ours, takes ~2 s.
 
 To re-score: `python -m wdtag.validate --bar --sizes 1000,5000,10000,50000` (batch 64).

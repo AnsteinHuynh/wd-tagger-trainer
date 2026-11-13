@@ -1,7 +1,0 @@
-images 50000  labels 12476  labels per image 32.3
-tags present at least once: 12454  median count 14
-sparse partner entries 14183  (1.1 per tag)
-tag 4 (count 34394) implies: 6:0.54, 1:0.52, 7:0.48, 8:0.45, 9:0.39
-tag 5 (count 28308) implies: 1:0.54, 6:0.52, 8:0.50, 7:0.44, 9:0.36
-tag 6 (count 25884) implies: 5:0.57, 1:0.53, 7:0.47, 8:0.43, 9:0.40
-saved cooc.npz

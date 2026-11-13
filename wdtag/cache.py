@@ -2,7 +2,7 @@
 
 Layout (temporary, rebuilt when absent): `I:/.cache/wd-tagger-trainer/{train,valid,test}/squash/shard#####-{total}.pt`.
 
-Bilinear resize, aspect ratio not preserved ("squash"); padded-square tied it statistically once adapter LR was right (ARM-RESULTS.md), so only squash is built. Shard ~0.5 GB (625 x 3x512x512 uint8) of u8 pixels + sparse CSR labels; `.tmp` then atomic rename, so an interrupted build resumes at the first missing/invalid shard.
+Bilinear resize, aspect ratio not preserved ("squash"); padded-square tied it statistically once adapter LR was right (the private experiment log), so only squash is built. Shard ~0.5 GB (625 x 3x512x512 uint8) of u8 pixels + sparse CSR labels; `.tmp` then atomic rename, so an interrupted build resumes at the first missing/invalid shard.
 """
 from __future__ import annotations
 
@@ -21,8 +21,12 @@ from PIL import Image
 
 from .labels import LabelSpace, load_label_space, tag_indices
 
-CACHE_ROOT = r"I:\.cache\wd-tagger-trainer"
-DATASET_ROOT = r"X:\unique\datasets\animetimm-danbooru-wdtagger-v4-w640-ws-full\repo"
+# Machine-local roots come from the environment so nothing user-specific ships in the file.
+CACHE_ROOT = os.environ.get("WDTAG_CACHE_ROOT", os.path.join(".cache", "wd-tagger-trainer"))
+DATASET_ROOT = os.environ.get(
+    "WDTAG_DATASET_ROOT",
+    os.path.join("datasets", "animetimm-danbooru-wdtagger-v4-w640-ws-full", "repo"),
+)
 # Resolution is read at import so every module that does `from .cache import SIZE` binds the
 # same value. It must match the run's `image_size`; train.py refuses to start otherwise.
 # The shard path carries no resolution, so a second size would silently overwrite the first

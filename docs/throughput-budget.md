@@ -6,7 +6,7 @@
 
 `scratch/sophie/bench_ckpt.py` records its start event after the forward and after the loss (`bench_ckpt.py:56-59`), so its ms/backward is a backward only. A real training step is 2.03x that at batch 24 and 2.08x at batch 40, constant across batches. Every comparison in this project that set a bench number beside a trainer img/s is therefore a factor-of-two error, and the ones made before this file existed should be re-read with that in mind. `scratch/sophie/bench_step.py` fixes it: it records before the forward, so its total is comparable to the trainer's step.
 
-The second half of the anomaly is not an anomaly. Large at 384 really does run at 57 to 69 img/s where base at 384 runs at 132 to 160, and the ratio is almost exactly the block count, twelve against twenty-four at the same token count. The 160 to 171 attributed to 384 in `ARM-RESULTS.md` was base all along.
+The second half of the anomaly is not an anomaly. Large at 384 really does run at 57 to 69 img/s where base at 384 runs at 132 to 160, and the ratio is almost exactly the block count, twelve against twenty-four at the same token count. The 160 to 171 attributed to 384 in the private experiment log was base all along.
 
 ## Measured step budget, base B/16 at 384, batch 48, eager, card otherwise idle
 

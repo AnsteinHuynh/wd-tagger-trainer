@@ -1,6 +1,6 @@
 # MAIN RUN — the recipe, the budget, and the gates before it
 
-The full-corpus run that chases the bar. Everything here is measured or computed from measurements in `docs/benchmark.md`, `docs/best-settings.md` and `ARM-RESULTS.md`; where it is extrapolation it says so.
+The full-corpus run that chases the bar. Everything here is measured or computed from measurements in `docs/benchmark.md`, `docs/best-settings.md` and the private experiment log; where it is extrapolation it says so.
 
 ## What it is
 
@@ -28,7 +28,7 @@ Throughput is now measured rather than estimated for this tower on the real tar:
 
 | field | value | why |
 |---|---|---|
-| `backbone_dir` | `I:\Models\siglip2-base-patch16-512` | the tower, +21% macro over DINOv3 at identical recipe |
+| `backbone_dir` | `models\siglip2-base-patch16-512` | the tower, +21% macro over DINOv3 at identical recipe |
 | `stream` | true | the corpus lives in tar shards; exact resume by consumed-sample cursor |
 | `stream_images` | 10643426 | two passes |
 | `batch_size` | 48 | 15.8 GB measured at this tower in stream-free mode, so the stream build fits |
@@ -54,7 +54,7 @@ Throughput is now measured rather than estimated for this tower on the real tar:
 
 `--val-every-steps 10000` gives 22 validations across two passes at about 170 seconds each, which is 1.7% of wall time. `--val-every-steps` is required in stream mode: without it validation fires once per epoch and the epoch is the whole schedule, so there would be exactly one number at the end and nothing to select a best checkpoint from.
 
-`--select-metric macro040` selects `best_val.pt` on macro F1 at the fixed 0.40 threshold, which is the number the bar comparison uses. This is a 2026-10-22 addition and it fixes two defects in the old path, both recorded in `ARM-RESULTS.md` at 18:42; it is unit-verified but its end-to-end smoke test is still owed, so it must not be the flag the main run depends on until that test passes.
+`--select-metric macro040` selects `best_val.pt` on macro F1 at the fixed 0.40 threshold, which is the number the bar comparison uses. This is a 2026-10-22 addition and it fixes two defects in the old path, both recorded in the private experiment log at 18:42; it is unit-verified but its end-to-end smoke test is still owed, so it must not be the flag the main run depends on until that test passes.
 
 At 50000 validation images all but 22 of the 12476 labels have support, so all-labels macro and supported-labels macro converge and the ambiguity that makes the 1k numbers misleading disappears.
 

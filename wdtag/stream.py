@@ -186,10 +186,10 @@ class TarStream:
 
     # ------------------------------------------------------------------ ordering
     def _order(self) -> list[str]:
-        rng = random.Random(self.seed * 1000003 + self.pass_index)
-        tars = list(self._tars)
-        rng.shuffle(tars)
-        return tars
+        # One definition of order lives in wdtag.manifest, because a cache shard labelled with the
+        # wrong tar is silently wrong while still looking plausible.
+        from .manifest import order as _tar_order
+        return _tar_order(self.split, self.seed, self.pass_index, names=self._tars)
 
     def total_samples(self) -> int:
         return min(self._total, self.max_samples) if self.max_samples else self._total
@@ -272,6 +272,14 @@ class TarStream:
                 self.log(f"[stream] pass {self.pass_index}: finished tar "
                          f"{ti + 1}/{len(order)} ({emitted:,} samples)")
 
+            # The tail after the last full batch used to be dropped silently: a cache pass covered
+            # floor(total/batch)*batch images, 241 short of the 5321713 corpus, and left zeros in the
+            # rows it claimed. Emit it so a pass over the corpus covers the corpus.
+            if fill > 0:
+                consumed = emitted + fill
+                yield bx[slot], by[slot], consumed, buf_src
+                emitted = consumed
+
     # ------------------------------------------------------------------ consuming
     def batches(self):
         """Yield batches from a producer thread so decoding overlaps training."""
@@ -296,4 +304,6 @@ class TarStream:
                     raise err[0]
                 return
             yield item
+
+
 

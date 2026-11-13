@@ -1,6 +1,6 @@
 # Pause, resume, and what "bit identical" can actually mean here
 
-Everything below was measured on 2026-10-23 with `scratch/sophie/test_stream_cursor.py`, `scratch/sophie/test_step_determinism.py` and the real trainer, on a base tower at batch 8 over 2400 stream images, and it exists because a resume that silently repeats or drops images would poison every number in `ARM-RESULTS.md` without ever showing up in a log.
+Everything below was measured on 2026-10-23 with `scratch/sophie/test_stream_cursor.py`, `scratch/sophie/test_step_determinism.py` and the real trainer, on a base tower at batch 8 over 2400 stream images, and it exists because a resume that silently repeats or drops images would poison every number in the private experiment log without ever showing up in a log.
 
 ## The short version
 

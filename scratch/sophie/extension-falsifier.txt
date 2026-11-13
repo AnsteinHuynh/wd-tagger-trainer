@@ -1,4 +1,0 @@
-Falsifier for the two-epoch extension, read at step 11000 (10k in-run validation):
-  macro >= 0.348, precision up >= +0.004 over step 9000, micro >= 0.578.
-Fail if macro < 0.344 on two consecutive validations, or precision down while recall up,
-or micro < 0.575. Also check adapter singular value p99 and max for OFT saturation.

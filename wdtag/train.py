@@ -158,7 +158,8 @@ def lr_at(step: int, total: int, base: float, warmup: int,
 
 @torch.no_grad()
 def evaluate(forward, model: DinoTagger, ds: CacheDataset, targets: np.ndarray,
-             batch_size: int, device: str) -> tuple[dict, np.ndarray]:
+             batch_size: int, device: str, feats: np.ndarray | None = None
+             ) -> tuple[dict, np.ndarray]:
     model.eval()
     n = len(ds)
     probs = np.empty((n, model.n_labels), dtype=np.float32)
@@ -167,7 +168,17 @@ def evaluate(forward, model: DinoTagger, ds: CacheDataset, targets: np.ndarray,
         take = len(idx)
         idx += [idx[-1]] * (batch_size - take)   # keep one static shape for compile
         x = torch.stack([ds[i][0] for i in idx]).to(device, non_blocking=True)
-        logits = forward(x)
+        if feats is not None:
+            fb = np.ascontiguousarray(feats[start:start + take])
+            if fb.shape[0] < batch_size:
+                # pad to the same static shape as x (repeat the last row; the padded
+                # logits are sliced away below, same as the padded images)
+                fb = np.concatenate(
+                    [fb, np.repeat(fb[-1:], batch_size - fb.shape[0], axis=0)])
+            f = torch.from_numpy(fb).to(device)
+            logits = forward(x, f)
+        else:
+            logits = forward(x)
         probs[start:start + take] = torch.sigmoid(logits.float()[:take]).cpu().numpy()
     model.train()
     metrics = compute_metrics(probs >= 0.5, targets)
@@ -335,7 +346,7 @@ class StepHelper:
         save_ckpt(p, self.model, self.opt, self.global_step, epoch, batch, self.best(), self.cfg)
         return p
 
-    def step(self, x, y, epoch=None, batch=0, src=None, indices=None) -> str:
+    def step(self, x, y, epoch=None, batch=0, src=None, indices=None, feats=None) -> str:
         # x and y are either one batch or a list of `grad_accum` micro-batches; the accumulated
         # gradient is the mean of the micro-batch gradients, which for an elementwise-mean loss is
         # the same number as one larger batch, not an approximation of it.
@@ -366,7 +377,7 @@ class StepHelper:
             print(f"debugpics: {self.debug_done}/100 written to {self.run_dir}\\debugpics",
                   flush=True)
 
-        loss = self.step_fn(group, y, self.global_step)
+        loss = self.step_fn(group, y, self.global_step, feats)
         gs = self.global_step = self.global_step + 1
         self.since_log += 1
         if gs % self.cfg.log_every == 0:
@@ -589,7 +600,17 @@ def main() -> None:
         ds_val = CacheDataset("valid", cfg.mode, n_labels)
         val_targets = load_targets("valid", cfg.mode, n_labels)
 
+    # A run whose frozen second view comes from a feature cache must validate on the same
+    # frozen view, not on a stock tower or on None. The val cache holds the trained trunk's
+    # pooled features for the same rows, in the same order.
     model = DinoTagger(cfg, n_labels).to(device)
+    if getattr(cfg, "feat_cache", "") and getattr(cfg, "feat_val_cache", ""):
+        vf = np.load(cfg.feat_val_cache, mmap_mode="r")
+        if len(vf) < len(ds_val):
+            raise SystemExit(f"feat_val_cache {cfg.feat_val_cache} has {len(vf)} rows but "
+                             f"validation wants {len(ds_val)}")
+        model._val_feats = vf
+        print(f"[val] frozen view from {cfg.feat_val_cache}: {len(vf)} rows", flush=True)
     priors = label_priors("train", cfg.mode, n_labels)
     model.init_head_bias(priors)
     counts = model.count_params()
@@ -631,8 +652,8 @@ def main() -> None:
     if _bias_eta > 0.0:
         _inner_forward = forward
 
-        def forward(x, _f=_inner_forward):
-            z = _f(x)
+        def forward(x, f=None, _f=_inner_forward):
+            z = _f(x) if f is None else _f(x, f)
             return z + cal_bias.to(z.dtype)
 
         print(f"[cal] per-tag rate matching on: eta {_bias_eta} every {_bias_every} steps, "
@@ -866,7 +887,9 @@ def main() -> None:
         """Validate, log, keep best_val.pt; mid-epoch or epoch end."""
         nonlocal best
         t0 = time.time()
-        metrics, probs = evaluate(forward, model, ds_val, val_targets, cfg.batch_size, device)
+        vf = getattr(model, "_val_feats", None)
+        metrics, probs = evaluate(forward, model, ds_val, val_targets, cfg.batch_size,
+                                  device, feats=vf)
         extra = threshold_summary(probs, val_targets)
         rec = {"step": step, "epoch": ep, **metrics, **extra,
                "val_seconds": round(time.time() - t0, 1), "val_images": len(ds_val)}
@@ -903,7 +926,7 @@ def main() -> None:
                   f"(selection metric: {a.select_metric}) -> best_val.pt", flush=True)
         return metrics
 
-    def step_once(x, y, step):
+    def step_once(x, y, step, feats=None):
         """One optimiser step for both loops."""
         # mirror the param-group order above, incl. freeze_oft + blocks.
         if cfg.freeze_oft:
@@ -928,10 +951,13 @@ def main() -> None:
         # over elements this is the same gradient as the full batch, because the mean of the
         # micro-batch means is the mean. The dropout draw and the cast differ from a true large
         # batch, so equal is up to floating point and RNG, not bitwise.
-        for xi, yi in zip(micro, ys):
+        for mi, (xi, yi) in enumerate(zip(micro, ys)):
             xi = xi.to(device, non_blocking=True)
             yi = yi.to(device, non_blocking=True)
-            logits = forward(xi)
+            fi = None
+            if feats is not None:
+                fi = feats[mi].to(device, non_blocking=True)
+            logits = forward(xi) if fi is None else forward(xi, fi)
             if loss_name == "cb_ntr":
                 loss = _loss_fn(logits.float(), yi, ntr_bias=_ntr_bias,
                                 class_weight=_class_weight, gamma=cfg.loss_gamma,
@@ -1007,15 +1033,28 @@ def main() -> None:
                 yield from sp.batches()
 
         model.train()
-        group_x, group_y, group_src = [], [], []
+        fc = getattr(model, 'feat_cache', None)
+        if fc is not None and (fc.seed, fc.pass_index) != (cfg.seed, start_pass):
+            raise SystemExit(
+                f"feat_cache was built at seed {fc.seed} pass {fc.pass_index} but this run "
+                f"is seed {cfg.seed} pass {start_pass}; every row would pair an image with "
+                f"another image's features")
+        group_x, group_y, group_src, group_f = [], [], [], []
         for x, y, consumed, src in _passes():
             group_x.append(x)
             group_y.append(y)
             group_src.extend(src)
+            if fc is not None:
+                feat0 = consumed - len(x)
+                block = fc.read(feat0, len(x))
+                # keep the cache's fp32 precision: the head is fp32, and rounding the frozen
+                # view to bf16 here would undo the fp32 cache's point
+                group_f.append(torch.from_numpy(block).to(torch.float32))
             if len(group_x) < h.accum:
                 continue
-            r = h.step(group_x, group_y, src=group_src)
-            group_x, group_y, group_src = [], [], []
+            r = h.step(group_x, group_y, src=group_src,
+                       feats=group_f if fc is not None else None)
+            group_x, group_y, group_src, group_f = [], [], [], []
             if r == "stop":
                 return
             if r == "complete":
@@ -1029,7 +1068,8 @@ def main() -> None:
             if short:
                 print(f"[accum] last step is short by {short} images (stream exhausted)",
                       flush=True)
-            r = h.step(group_x, group_y, src=group_src)
+            r = h.step(group_x, group_y, src=group_src,
+                       feats=group_f if fc is not None else None)
             if r == "stop":
                 return
 

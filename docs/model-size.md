@@ -1,6 +1,6 @@
 # Model size — what is inside DINOv3 ViT-B/16, block by block
 
-Every freeze-depth decision needs to know what one block costs. Read from the safetensors header of `I:\Models\dinov3-vitb16-pretrain-lvd1689m\model.safetensors` (211 tensors, names and shapes only, no weights loaded), and cross-checked against the trainer's own banner and against the optimizer state in `runs/83231ec3/ckpt_step001000.pt`.
+Every freeze-depth decision needs to know what one block costs. Read from the safetensors header of `models\dinov3-vitb16-pretrain-lvd1689m\model.safetensors` (211 tensors, names and shapes only, no weights loaded), and cross-checked against the trainer's own banner and against the optimizer state in `runs/83231ec3/ckpt_step001000.pt`.
 
 ## The whole backbone: 85660416 parameters
 

@@ -1,19 +1,19 @@
 # Qwen3.8-27B vision tower as a backbone (mmproj route, no language model)
 
-Vision encoder only, no LLM, no token generation, OFT on the tower like any backbone; `dreamsim-dinov3` did this and their numbers are the best prior. Found 2026-10-22; sister project `C:\Users\kerok\apps\dreamsim-dinov3`
+Vision encoder only, no LLM, no token generation, OFT on the tower like any backbone; `dreamsim-dinov3` did this and their numbers are the best prior. Found 2026-10-22; sister project `<sister-project>`
 
 ## The mmproj is the tower, not a quantized VLM
 
-`I:\MyApps\LLAMA-Models\qwen38-27b\mmproj-Qwen3.8-27B-bf16.gguf` (888 MiB) is the vision tower + merger and nothing else:
+`models\qwen38-27b\mmproj-Qwen3.8-27B-bf16.gguf` (888 MiB) is the vision tower + merger and nothing else:
 
 > 334 GGUF tensors -> 333 HF params, 460730096 params, 0 unmapped / missing / extra / shape-mismatched, `load_state_dict(strict=True)`. Every mismatch RAISES, deliberately: a silently mis-mapped tower still produces plausible embeddings and never crashes.
 
-The 55.6 GB / 18-shard `X:\unique\models\Qwen3.8-27B` repo is not needed for the image path: no tokenizer, no `<image>` tokens, no decode, no llama.cpp. The full VLM (`llama-server` + mmproj, ~3.85 s/image, 19-20 GB VRAM) is a slower tool
+The 55.6 GB / 18-shard `models\Qwen3.8-27B` repo is not needed for the image path: no tokenizer, no `<image>` tokens, no decode, no llama.cpp. The full VLM (`llama-server` + mmproj, ~3.85 s/image, 19-20 GB VRAM) is a slower tool
 
 ## Loading it
 
 ```python
-import sys; sys.path.insert(0, r"C:\Users\kerok\apps\dreamsim-dinov3\src")
+import sys; sys.path.insert(0, r"<sister-project>\src")
 from dreamsim_oft.qwen_vision import load_vision_tower, qwen_vision_embed, POOL_DIMS
 
 tower, info = load_vision_tower()                     # bf16; dtype=float32 => fp32 math

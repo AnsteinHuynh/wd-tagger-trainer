@@ -45,7 +45,7 @@ Forward-only and with-counting now measure the same (244 vs 246 img/s), because 
 
 ## The nested cache
 
-`I:\.cache\wd-tagger-trainer\valid_nested\` — `images.npy` (50000 x 3 x 512 x 512 uint8,
+`cache/wd-tagger-trainer\valid_nested\` — `images.npy` (50000 x 3 x 512 x 512 uint8,
 39.3 GB memmap), `labels.npz` (sparse `indices`/`offsets`), `meta.json`.
 
 The 1k / 5k / 10k / 50k subsets are prefixes of the same array, so they are nested by construction and one pass yields all of them. Verified: 32.4 / 32.1 / 32.1 / 32.3 positives per image and 4669 / 8973 / 10809 / 12454 supported labels.
@@ -54,7 +54,7 @@ Batches straddle subset boundaries (128 does not divide 1000), so each subset co
 
 ## Probability cache
 
-`I:\.cache\wd-tagger-trainer\probs\{run}_{step}.npy`, float16, 50000 x 12476 = 1.25 GB,
+`cache/wd-tagger-trainer\probs\{run}_{step}.npy`, float16, 50000 x 12476 = 1.25 GB,
 plus a `.json` sidecar recording how many rows are valid.
 
 The sidecar is not optional. `open_memmap` allocates the full 50000 rows but only rows below the requested size are ever written, so a cache produced by a 5000-image run was silently reused for a 50000-image run and scored 45000 rows of zeros — macro 0.0371 instead of 0.2594. `--recompute` forces a rebuild.
@@ -76,7 +76,7 @@ Caution: micro F1 is the harmonic mean of pooled P and R, but macro F1 is the me
 |---|---|
 | `runs/{sha8}/validation.json` | canonical report: thresholds x subsets x 8 metrics |
 | `runs/{sha8}/compare_bar_040.json` | ours vs bar at 0.40, with ratios |
-| `I:\.cache\wd-tagger-trainer\bar_validation.json` | the bar scored on our cache |
+| `cache/wd-tagger-trainer\bar_validation.json` | the bar scored on our cache |
 
 ## Reference numbers (checkpoint 086241, 50k, at 0.40)
 
@@ -95,4 +95,4 @@ The nested cache is the val split. AGENTS.md asks for validation and test; a 50k
 
 ## Which checkpoint gets scored
 
-`python -m wdtag.validate --run <dir>` scores the highest step number among `ckpt_step*.pt`. It does not touch `best_val.pt`, and the run's `--select-metric` has no effect on it, because that flag only decides which file the training loop copies to `best_val.pt`. So every number in ARM-RESULTS.md that came from a bare `--run` is a final-checkpoint number, and the only way to score a different artifact is to name it, `--ckpt best_val.pt`.
+`python -m wdtag.validate --run <dir>` scores the highest step number among `ckpt_step*.pt`. It does not touch `best_val.pt`, and the run's `--select-metric` has no effect on it, because that flag only decides which file the training loop copies to `best_val.pt`. So every number in the private experiment log that came from a bare `--run` is a final-checkpoint number, and the only way to score a different artifact is to name it, `--ckpt best_val.pt`.

@@ -52,7 +52,7 @@
   "stream_images": 10643426,
   "val_images": 10000,
   "log_every": 10,
-  "backbone_dir": "I:\\Models\\dinov3-vitl16-pretrain-lvd1689m",
+  "backbone_dir": "models/dinov3-vitl16-pretrain-lvd1689m",
   "seed": 1,
   "head_pool": "cls_mean",
   "unfreeze_blocks": 0,

@@ -1,77 +1,72 @@
 # wd-tagger-trainer
 
-Train an anime tagger on `wdtaggerv4` with a DINOv3 ViT-B/16 backbone adapted by OFTv2 (Orthogonal Fine-Tuning) and optimised with SinkSGD_ADV, then score it against `convnextv2_huge.dbv4-full` on a 50k validation subset at a fixed 0.40 threshold.
+A parameter-efficiency and training-methods study for anime-style image taggers (WD-tagger style, Danbooru-style tag vocabulary). It asks how close a released full-size tagger can be approached by training only a small fraction of the parameters: modern vision backbones fine-tuned with OFTv2 (Orthogonal Fine-Tuning) adapters, one unfrozen block, a frozen cached second tower, and SinkSGD_ADV optimizer experiments, scored against the released `convnextv2_huge` tagger as the bar. Headline (see `RESULTS.md`): one epoch training 31.1M parameters, 4.5% of the bar's count, reaches 74.6% of its macro F1. This is a research repo, not a product: the code is tuned to one machine, one dataset, and one GPU.
 
-## Where this stands
+Author: Anstein Huynh.
 
-We do not beat the bar yet. Measured on 50k validation images at 0.40, ours from the long run at checkpoint 086241 (`runs/4a13a120`), the bar from `wdtag.validate --bar` on the same images:
+## What it is
 
-| | ours | bar | ours/bar |
-|---|---|---|---|
-| macro F1 @0.40 | 0.2815 | 0.5579 | 50.4% |
-| macro MCC / P / R | 0.3062 / 0.4608 / 0.2266 | 0.5658 / 0.6201 / 0.5333 | 54 / 74 / 43% |
-| micro F1 @0.40 | 0.6133 | 0.6886 | 89.1% |
-| micro MCC / P / R | 0.6179 / 0.7068 / 0.5417 | 0.6880 / 0.7033 / 0.6746 | 90 / 100.5 / 80% |
+- PyTorch multi-label training over a WD tagger label space (about 12.5k labels: general, character, rating).
+- Backbones: DINOv3 ViT-B/16 and SigLIP2-B/16, adapted with OFTv2 orthogonal adapters, one unfrozen transformer block, ASL loss, BF16, torch.compile.
+- A two-tower ensemble mode: a trained tower plus a frozen second tower whose cached features are concatenated before the head.
+- Streaming data loading straight from source tar archives, pausable and resumable runs, and a strict scoring protocol (fixed 0.40 threshold, no per-tag tuning) against the `convnextv2_huge` baseline.
 
-Micro is within 11% of the bar and micro precision already exceeds it; the gap is entirely macro, and macro is where the rare tags live. The 10k-era comparison (whose numbers are in `ARM-RESULTS.md`) is not the current objective.
+## Training pipeline
 
-`ARM-RESULTS.md` is the central, hand-maintained experiment log and the only place results live: every head, loss and unfreeze arm, the 10k benchmark definition, the noise-floor arm, and the findings that outlive any single arm. Read it before designing an arm so nothing is re-run. `REPORT.md` and `wdtag/report.py` are deprecated: a generated second report drifted out of date, so it is kept for history and no longer maintained.
+1. Labels and manifests: `wdtag.labels` and `wdtag.manifest` build label spaces and train/valid/test manifests from the dataset.
+2. Streaming input: `wdtag.stream` reads images directly out of tar archives on disk with a seeded per-epoch permutation, so resumed runs never repeat seen images.
+3. Model: `wdtag.model` wraps DINOv3 or SigLIP2 with OFT adapters (block size 128, exact Cayley), optional frozen SigLIP2 second tower, and a multi-label head in fp32.
+4. Train: `wdtag.train` is the main loop (SinkSGD-style optimizer options, gradient checkpointing, `.PAUSE` for clean shutdown, checkpoint every N steps). `wdtag.train_cached` trains only the head on cached frozen features; `wdtag.cache_features` / `wdtag.featcache` / `wdtag.shard_cache` build and manage those feature caches.
+5. Score: `wdtag.validate` scores a run or the baseline (`--bar`) at a fixed 0.40 threshold on nested validation subsets (1k to 50k). `wdtag.evaluate`, `wdtag.score`, `wdtag.infer` cover test-split eval, rescoring from probability caches, and running a model on new images.
 
-## Train
+`RESULTS.md` holds the public summary of the best run and the scoring protocol. `docs/` holds measured notes on best settings, caching, and the benchmark definition.
+
+## Results so far
+
+Honest summary: this is a parameter-efficiency study, not a leaderboard entry. Single towers do not beat the `convnextv2_huge` bar, and neither does the best two-tower ensemble, but the ensemble closes to 74.6% of the bar's macro F1 (0.4162 vs 0.5579 on the 50k instrument) while training 31.1M parameters to the bar's 692.6M, in a single epoch. The best run's numbers are reproducible from the provenance JSONs kept in `runs/8f6de35e/` (config, validation, test eval).
+
+- Baseline bar, `convnextv2_huge.dbv4-full` (1000 test images, threshold 0.5): macro F1 0.194, micro F1 0.680. On the 50k validation instrument at threshold 0.40 (as recorded in the author's experiment log): macro F1 0.5579, micro F1 0.6886.
+- Single-tower DINOv3-B/16 + OFTv2, long run (`runs/4a13a120`), 50k validation at 0.40: macro F1 0.2815, micro F1 0.6133, so about 50% of the bar's macro and 89% of its micro.
+- Best result, two-tower ensemble (`runs/8f6de35e`): DINOv3-B/16 (one unfrozen block + OFT in all blocks) trained for one epoch against a frozen, already-trained SigLIP2 tower's cached features, features concatenated before the head. Its `validation.json`, 50k images at 0.40: macro F1 0.4162, macro MCC 0.4364, micro F1 0.5154. It beats the SigLIP2 solo tower's two-epoch result on the same instrument (macro F1 0.4066 vs 0.4165 at best-val step 13500, per `RESULTS.md`), and the training curve was still rising when the epoch ended.
+- So the ensemble closes roughly three quarters of the single-tower macro gap to the bar but does not pass it. Micro precision of earlier single towers already matched the bar; the remaining gap is macro, which is where rare tags live.
+
+- Held-out test split (same protocol as the baseline's eval, threshold 0.5, checkpoint 13859): macro F1 0.1694, micro F1 0.6018 against the bar's 0.194 / 0.680, so the ensemble also trails it there. See `RESULTS.md`. Remaining TODO: more than one epoch; the training curve was still rising when the epoch ended.
+
+## What are we even optimizing?
+
+The author's view, stated plainly: at some point you have to ask whether you are training the model to be good, or training it to memorize what a human happened to pick. Danbooru tagging is messy, and humans are far more likely to leave a tag out than to add a wrong one. So past enough epochs the model is not just learning word-to-feature mappings, it is learning to recognize and copy the deficits of human annotators: their omissions, their blind spots, their inconsistency. Macro F1 against human labels measures agreement with noisy annotators, not correctness. Some of the gap that looks like "rare tags the model cannot learn" is plausibly missing human labels, not model failure. This gives the one-epoch efficiency result a second reading: training longer does not just overfit the images, it starts fitting the label noise.
+
+## Usage
+
+Requires a local dataset in WD-tagger format (tar archives of images plus tag metadata), local DINOv3 and SigLIP2 checkpoints (paths are configured per run), and a CUDA GPU with plenty of VRAM (a 512px batch-48 setup used about 20 GB).
 
 ```powershell
-$env:PYTHONPATH="C:\Users\kerok\apps\wd-tagger-trainer"
-C:\Python314\python.exe -u -m wdtag.train --config configs\heads\phase3\01_u12-C-L-asl-g4.0.json --select-metric macro
+# train from a config (run dirs are named by the sha8 of the config)
+python -m wdtag.train --config configs\dino\abl-dinov3l-plus-siglip2b-u1-C-asl-g2.0-512-b64x6-100k.json --select-metric macro
+
+# pause cleanly: create .PAUSE in the run dir or repo root, the trainer checkpoints and exits
+
+# score a run on the validation subsets
+python -m wdtag.validate --run runs\8f6de35e --batch-size 256
+
+# score the baseline bar on the same images
+python -m wdtag.validate --bar --sizes 1000,5000,10000,50000
+
+# eval a finished run on the held-out test split (writes runs\<sha8>\eval_test.json)
+python -m wdtag.evaluate --run runs\8f6de35e
 ```
 
-Reference settings, all measured (`docs/best-settings.md` has the evidence and the traps): batch 48, 512px squash, 12 unfrozen blocks, OFT `block_size` 128 with exact Cayley (`cayley_terms 0`), `head_fp32`, `compile_model` and `compiled_optimizer` on, checkpoint every 1000 steps, `--select-metric macro`. Throughput at that config is 116.3 img/s compiled against 92.8 eager; a frozen backbone reaches 160 img/s, so roughly 30% of throughput is the deliberate cost of training the backbone.
+Backbone and cache paths in configs point at local drives; edit them for your machine.
 
-Runs are named by the sha8 of their whole config and written to `runs/<sha8>/`. Adding a config field changes the hash of every unpinned config, so never look a run up by re-hashing: read the `run dir` line from the log, or `_sha8` in `<run>/config.json`.
+## Repo layout
 
-Every run is pausable and resumable: create `.PAUSE` (or `.PUASE`) in the run directory or the workspace root and the trainer checkpoints and exits cleanly at the next step. Resume with `--run runs/<sha8>`; the epoch permutation is a pure function of `(seed, epoch)` and the checkpoint stores the next batch, so a resumed run never re-shows an image it has already trained on. The first 100 training images are written as PNGs to `runs/<sha8>/debugpics/` with a `manifest.json` so any picture can be traced back to its source tar.
+- `wdtag/` - the package: data, model, train loop, validation, scoring, inference, feature caching.
+- `configs/` - run configs, including the DINOv3 + SigLIP2 ensemble ablations under `configs/dino/`.
+- `runs/` - provenance for the best run only (`8f6de35e`: config.json, validation.json). Checkpoints, probability dumps, debug sample images, and all other runs live on disk but are git-ignored.
+- `docs/` - measured notes: best settings, benchmark definition, caching, label-integrity audit, plus a few HTML explainers.
+- `RESULTS.md` - the public results summary: best run, protocol, comparison points.
+- `scratch/`, `runs/**/debugpics/`, `*.pt`, `*.npy` - local only, never committed.
 
-## Score
+## License / data note
 
-```powershell
-C:\Python314\python.exe -m wdtag.validate --run runs/4a13a120 --batch-size 256
-C:\Python314\python.exe -m wdtag.validate --bar --sizes 1000,5000,10000,50000
-```
-
-Fixed threshold 0.40, eight numbers, no per-tag tuning. Batch 256 for our model, 64 for the 692.6M-parameter bar; the batch differs per model because 512 maxes the card. Read results from `<run>/validation.json` -> `subsets["50000"]`, never from console text: the validator prints an `at 0.40:` block once per nested size and scraping returns the 1000-image numbers as if they were 50k. A cold 50k pass is ~3.4 min and rescoring from the probability cache is ~2 s.
-
-## Layout
-
-```
-wdtag/
-  config.py    TrainConfig, sha8 naming, measured defaults
-  cache.py     tar sampling + 512x512 shard builder (resumable, atomic)
-  data.py      mmap dataset, collator, label priors
-  labels.py    the 12476-label space of the bar, tag -> index mapping
-  oft.py       OFTv2 adapters (ported from OneTrainer's PeftType.OFT_2)
-  model.py     DINOv3-B + OFTv2 + multi-label head, unfreeze, block checkpointing
-  losses.py    bce, bce_pos_weight, asl, cb_ntr, asl_ntr
-  metrics.py   macro/micro F1, MCC, P, R, threshold sweep
-  train.py     StepHelper + both training loops (cache and tar stream), resume, .PAUSE
-  validate.py  the 50k pipeline, fixed 0.40, probability cache
-  report.py    DEPRECATED, kept for history; results go in ARM-RESULTS.md
-configs/heads/  one JSON per arm, phase3/ holds the current ladder
-runs/           one directory per config hash
-```
-
-## Data
-
-Images come from the webdataset tars in `X:\...\wdtaggerv4\repo\{train,test,val}`, 5321713 train images across 213 shards. Mid-tar seeking costs one HDD seek per member, so sampling is contiguous from the start of each shard; the shard order is already shuffled, so shard starts are spread across the corpus. Everything is materialised once as 512x512 uint8 shards of ~0.5 GB. The cache is disposable: it is validated at run start, missing or truncated shards are rebuilt, and shards are written to `.tmp` and atomically renamed so an interrupted build resumes at the first bad shard. The full corpus would cache to 4.18 TB, which is why training can also stream straight from the tars (`--stream`).
-
-Squash and pad tie within the seed spread and squash is the default.
-
-## Label coverage, before interpreting macro
-
-The annotations are clean: no train/test leakage, no out-of-vocabulary tags, no empty label vectors, no duplicate keys. What is scarce is coverage. In the 10k benchmark only 10790 of 12476 labels appear in training, 7908 appear in fewer than 10 images, and 217 labels present in test never appear in train at all. 62% of the vocabulary never occurs in the test split and scores 0 for both models, so the headline macro figure dilutes both sides equally. The collapse is in the 1-9 image bucket, where we score 0.0009 against a bar that saw those tags hundreds of times. That is a data-coverage wall and most of the headline gap. Detail in `docs/label-integrity-audit.md`.
-
-## Memory
-
-Opening all train shards in one process costs ~8.8 GB of private commit on Windows, and each extra opening of the same file costs another copy, so every shard is opened once per process through a module-level cache (`data.open_shard`), workers are disabled (`num_workers=0`) because loading is not the bottleneck, and `CacheDataset.__getstate__` strips mapped tensors so a spawned worker cannot receive a pickled copy. Commit stays flat at ~55 GB across epochs instead of climbing ~18 GB per epoch.
-
-## Open questions
-
-Whether the macro gap can be closed at all on this dataset, and whether the 10k-era ranking of heads and losses still holds at full scale. The candidate long run is the best head times the best loss times the best freeze depth, and there is no evidence yet about how any two of those three interact.
+The dataset, pretrained checkpoints, and the baseline tagger are third-party and not distributed here; only training code, configs, and small eval JSONs are in this repo.
