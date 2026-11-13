@@ -4,6 +4,10 @@ A parameter-efficiency and training-methods study for anime-style image taggers 
 
 Author: Anstein Huynh.
 
+## License
+
+This repository is distributed under **AGPL-3.0** (see `LICENSE`). To be explicit about why: the only externally derived code is `wdtag/oft.py`, the OFTv2 adapter implementation, ported from OneTrainer (AGPL-3.0); a derivative of an AGPL work makes the combined distribution AGPL. Everything else here is original work by the author. A future release plans to replace the adapter with a clean-room implementation from the OFT/BOFT papers and relicense under MIT. The trained checkpoints on HuggingFace additionally build on DINOv3 (Meta DINOv3 License) and SigLIP2 (Apache-2.0); their terms apply to the weights.
+
 ## What it is
 
 - PyTorch multi-label training over a WD tagger label space (about 12.5k labels: general, character, rating).

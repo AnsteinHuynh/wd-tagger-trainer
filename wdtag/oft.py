@@ -1,5 +1,12 @@
 """OFTv2 (Orthogonal Fine-Tuning, v2) adapters, ported from OneTrainer (`PeftType.OFT_2`).
 
+License note: this module is a derivative of OneTrainer (https://github.com/Nerogar/OneTrainer),
+licensed AGPL-3.0. The repository is therefore distributed under AGPL-3.0 (see LICENSE).
+Everything outside this module is original work by Anstein Huynh and would otherwise be
+relicensable; see the README license section.
+TODO (kerok, 2026-11-13): replace this port with a clean-room implementation from the
+OFT (arXiv:2306.07280) and BOFT papers, then relicense the repo MIT.
+
 R = block-diagonal rotation: Cayley transform of skew-symmetric Q built per block from the learnt upper triangle. v2 uses a truncated Neumann series instead of `torch.linalg.solve` (cheaper, differentiable); parameter starts at zero so R = I. Linear rotates input (equivalent to rotating weights, cheaper); Conv2d rotates flattened weight (rotating input would destroy spatial structure).
 """
 from __future__ import annotations
