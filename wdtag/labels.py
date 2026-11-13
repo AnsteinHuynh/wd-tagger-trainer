@@ -11,7 +11,7 @@ import json
 import os
 from dataclasses import dataclass
 
-BASELINE_DIR = r"C:\MyApps\ComfyUIRoot\convnextv2_huge.dbv4-full"
+BASELINE_DIR = os.environ.get("WDTAG_BASELINE_DIR", "<path/to/convnextv2_huge.dbv4-full>")
 
 # categories in the dataset: 9 = rating, 0 = general, 4 = character
 CAT_RATING, CAT_GENERAL, CAT_CHARACTER = 9, 0, 4
