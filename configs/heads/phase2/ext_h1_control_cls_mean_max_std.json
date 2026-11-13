@@ -29,7 +29,7 @@
   "compile_model": true,
   "compiled_optimizer": true,
   "freeze_oft": false,
-  "init_from": "C:\\Users\\kerok\\apps\\wd-tagger-trainer\\runs\\470e6fa9",
+  "init_from": "runs/470e6fa9",
   "stream": false,
   "stream_images": 0,
   "seed": 1337,
