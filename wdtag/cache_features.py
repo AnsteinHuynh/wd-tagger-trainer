@@ -15,7 +15,7 @@ row i of feats.npy always belongs to row i of labels.npz. A partial cache resume
 the samples already written.
 
 Usage:
-  python -m wdtag.cache_features --run runs/459e2a02 --split valid --out I:/.cache/feat/459e2a02
+  python -m wdtag.cache_features --run runs/459e2a02 --split valid --out ./cache/feat/459e2a02
   python -m wdtag.cache_features --run runs/459e2a02 --split train --limit 50000 --out ...
 """
 from __future__ import annotations

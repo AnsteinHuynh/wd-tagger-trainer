@@ -17,8 +17,8 @@ than a pile of untrusted files. Every shard is hashed against the source slice a
 the source is only deleted when `--delete-source` is passed and every shard matched.
 
 Usage:
-  python -m wdtag.shard_cache --cache I:/.cache/.../siglip2-cmss-train --out I:/.cache/.../siglip2-cmss-shards
-  python -m wdtag.shard_cache --check I:/.cache/.../siglip2-cmss-shards
+  python -m wdtag.shard_cache --cache ./cache/.../siglip2-cmss-train --out ./cache/.../siglip2-cmss-shards
+  python -m wdtag.shard_cache --check ./cache/.../siglip2-cmss-shards
 """
 from __future__ import annotations
 

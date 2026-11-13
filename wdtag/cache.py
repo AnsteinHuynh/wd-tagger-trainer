@@ -1,6 +1,6 @@
 """Sampling + building of the 512x512 image caches.
 
-Layout (temporary, rebuilt when absent): `I:/.cache/wd-tagger-trainer/{train,valid,test}/squash/shard#####-{total}.pt`.
+Layout (temporary, rebuilt when absent): `./cache/wd-tagger-trainer/{train,valid,test}/squash/shard#####-{total}.pt`.
 
 Bilinear resize, aspect ratio not preserved ("squash"); padded-square tied it statistically once adapter LR was right (the private experiment log), so only squash is built. Shard ~0.5 GB (625 x 3x512x512 uint8) of u8 pixels + sparse CSR labels; `.tmp` then atomic rename, so an interrupted build resumes at the first missing/invalid shard.
 """

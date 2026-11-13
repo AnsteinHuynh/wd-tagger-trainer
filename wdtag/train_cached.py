@@ -6,7 +6,7 @@ concatenated. It reports the protocol number that matters, macro and micro F1 at
 threshold, plus the predicted tags per image, which is the calibration diagnostic.
 
 Usage:
-  python -m wdtag.train_cached --train-feats I:/.cache/feat/train --val-feats I:/.cache/feat/valid \
+  python -m wdtag.train_cached --train-feats ./cache/feat/train --val-feats ./cache/feat/valid \
       --out runs/cached-linear --head linear --epochs 3
 """
 from __future__ import annotations

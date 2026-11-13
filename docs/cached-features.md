@@ -6,9 +6,9 @@ The production model spends almost all of its step time in the backbone. Once a 
 
 Cache one checkpoint over one split:
 
-    python -m wdtag.cache_features --run runs/459e2a02 --split valid --out I:/.cache/wd-tagger-trainer/feat/459e2a02-val
+    python -m wdtag.cache_features --run runs/459e2a02 --split valid --out ./cache/wd-tagger-trainer/feat/459e2a02-val
 
-    python -m wdtag.cache_features --run runs/459e2a02 --split train --limit 5321713 --out I:/.cache/wd-tagger-trainer/feat/459e2a02-train
+    python -m wdtag.cache_features --run runs/459e2a02 --split train --limit 5321713 --out ./cache/wd-tagger-trainer/feat/459e2a02-train
 
 Train and score a head on those caches:
 
