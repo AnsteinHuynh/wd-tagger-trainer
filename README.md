@@ -70,3 +70,5 @@ Backbone and cache paths in configs point at local drives; edit them for your ma
 ## License / data note
 
 The dataset, pretrained checkpoints, and the baseline tagger are third-party and not distributed here; only training code, configs, and small eval JSONs are in this repo.
+
+Trained checkpoints (ensemble ckpt 13859 + frozen SigLIP2 tower 27718): https://huggingface.co/ansteinhuynh/wdtag-ensemble-dinov3-siglip2
