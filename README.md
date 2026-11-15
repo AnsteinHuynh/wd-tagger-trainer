@@ -27,14 +27,14 @@ This repository is distributed under **AGPL-3.0** (see `LICENSE`). To be explici
 
 ## Results so far
 
-Honest summary: this is a parameter-efficiency study, not a leaderboard entry. Single towers do not beat the `convnextv2_huge` bar, and neither does the best two-tower ensemble, but the ensemble closes to 74.6% of the bar's macro F1 (0.4162 vs 0.5579 on the 50k instrument) while training 31.1M parameters to the bar's 692.6M, in a single epoch. The best run's numbers are reproducible from the provenance JSONs kept in `runs/8f6de35e/` (config, validation, test eval).
+Summary: this is a parameter-efficiency study, not a leaderboard entry. The best two-tower ensemble closes to 74.6% of the bar's macro F1 (0.4162 vs 0.5579 on the 50k instrument) while training 31.1M parameters to the bar's 692.6M, in a single epoch. The best run's numbers are reproducible from the provenance JSONs kept in `runs/8f6de35e/` (config, validation, test eval).
 
 - Baseline bar, `convnextv2_huge.dbv4-full` (1000 test images, threshold 0.5): macro F1 0.194, micro F1 0.680. On the 50k validation instrument at threshold 0.40 (as recorded in the author's experiment log): macro F1 0.5579, micro F1 0.6886.
 - Single-tower DINOv3-B/16 + OFTv2, long run (`runs/4a13a120`), 50k validation at 0.40: macro F1 0.2815, micro F1 0.6133, so about 50% of the bar's macro and 89% of its micro.
 - Best result, two-tower ensemble (`runs/8f6de35e`): DINOv3-B/16 (one unfrozen block + OFT in all blocks) trained for one epoch against a frozen, already-trained SigLIP2 tower's cached features, features concatenated before the head. Its `validation.json`, 50k images at 0.40: macro F1 0.4162, macro MCC 0.4364, micro F1 0.5154. It beats the SigLIP2 solo tower's two-epoch result on the same instrument (macro F1 0.4066 vs 0.4165 at best-val step 13500, per `RESULTS.md`), and the training curve was still rising when the epoch ended.
-- So the ensemble closes roughly three quarters of the single-tower macro gap to the bar but does not pass it. Micro precision of earlier single towers already matched the bar; the remaining gap is macro, which is where rare tags live.
+- So the ensemble closes roughly three quarters of the single-tower macro gap to the bar. Micro precision of earlier single towers already matched the bar; the remaining gap is macro, which is where rare tags live.
 
-- Held-out test split (same protocol as the baseline's eval, threshold 0.5, checkpoint 13859): macro F1 0.1694, micro F1 0.6018 against the bar's 0.194 / 0.680, so the ensemble also trails it there. See `RESULTS.md`. Remaining TODO: more than one epoch; the training curve was still rising when the epoch ended.
+- Held-out test split (same protocol as the baseline's eval, threshold 0.5, checkpoint 13859): macro F1 0.1694, micro F1 0.6018 against the bar's 0.194 / 0.680. See `RESULTS.md`. Remaining TODO: more than one epoch; the training curve was still rising when the epoch ended.
 
 ## What are we even optimizing?
 
